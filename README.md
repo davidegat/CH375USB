@@ -32,14 +32,19 @@ The driver is intended for 386-class DOS machines such as the Pocket386 and curr
 - Read/write support in DOS.
 - Hotplug works in DOS.
 - One DOS removable drive letter is reserved by CH375USB.
-- Can also remain available in Windows 95 when CH375USB is loaded with `DEVLOAD` from `AUTOEXEC.BAT` immediately before Windows starts.
-- Windows hotplug is **not** supported: the USB drive must already be inserted and detected by DOS before `WIN` is started.
+- Can also remain available in Windows 95 when CH375USB is loaded with `DEVLOAD` from `AUTOEXEC.BAT` and a flash drive is connected BEFORE starting Windows 95.
+- Windows hotplug is **not** fully supported: the USB drive must already be inserted and detected by DOS before `WIN` is started, in this case hotplug MAY HAPPEN and you may be able to remove your media and connect another.
 
 ### USB keyboard
 
 - Works in DOS.
 - Can be connected and disconnected while DOS is running.
 - Does not currently work in the Windows 95 GUI.
+
+### USB HUB (up to four downstream devices)
+- Experimental feature, not complete.
+- Support present, but not tested.
+- Try at own risk.
 
 ## Tested setup
 
@@ -59,8 +64,6 @@ The Pocket386 used for testing was configured with non-standard, performance-ori
 - Slow Refresh: 120 µs
 
 They are not required by the driver. Standard or more conservative BIOS settings should also work and may provide better stability. If you experience problems, test the driver with the BIOS defaults before changing anything else.
-
-Experimental support for one external USB hub with up to four downstream devices is also present but not tested yet.
 
 ## Files
 
@@ -168,8 +171,8 @@ With this setup:
 - the **DOS** menu entry loads CH375USB normally and supports USB storage, keyboard, mouse and hotplug;
 - the **Windows 95** menu entry loads CH375USB with `DEVLOAD` immediately before Windows starts;
 - USB storage can remain available in Windows 95;
-- the USB drive must be inserted and detected before `WIN` starts (in this case hotplug may work);
-- USB storage hotplug generally does not work after Windows has started if the USB drive has not been detected before;
+- the USB drive must be inserted and detected before `WIN` starts (in this case hotplug MAY work);
+- USB storage hotplug generally does not work after Windows has started if the USB drive has not been detected before in DOS environment;
 - USB keyboard and USB mouse are NOT currently supported in the Windows 95 GUI.
 
 
