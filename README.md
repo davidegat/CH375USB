@@ -34,6 +34,8 @@ The driver is intended for 386-class DOS machines such as the Pocket386 and curr
 - One DOS removable drive letter is reserved by CH375USB.
 - Can also remain available in Windows 95 when CH375USB is loaded with `DEVLOAD` from `AUTOEXEC.BAT` and a flash drive is connected BEFORE starting Windows 95.
 - Windows hotplug is **not** fully supported: the USB drive must already be inserted and detected by DOS before `WIN` is started, in this case hotplug MAY HAPPEN and you may be able to remove your media and connect another.
+- If unable to use your drive plug and play (DOS), just let the system boot with the usb drive connected.
+
 
 ### USB keyboard
 
