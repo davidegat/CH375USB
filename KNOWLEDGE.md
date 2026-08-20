@@ -3,7 +3,7 @@
 **Project:** CH375USB  
 **Target:** Pocket386 and similar 386-class DOS PCs with a CH375 ISA USB controller  
 **Author:** Davide "gat" — https://github.com/davidegat  
-**Current reference version:** 0.4.11
+**Current reference version:** 0.4.12
 
 This document is not a user manual and not a formal CH375 specification. It is a record of practical knowledge collected while developing and testing CH375USB on real hardware.
 
@@ -284,6 +284,8 @@ The timeouts are intentionally context-specific.
 
 A control transfer may need to tolerate connection-status events while waiting for its real completion status. An HID poll, on the other hand, must return quickly because a NAK from an idle mouse or keyboard is completely normal.
 
+Datasheet II adds an important controller-specific reason to make retry policy explicit: after chip reset or USB-mode reset, `SET_RETRY` defaults to `85h`, which means effectively infinite retry on NAK plus five retries after device timeout. Starting with 0.4.12, generic USB enumeration/polling explicitly selects bounded retry behaviour instead of accidentally inheriting that reset default.
+
 ### Important observation
 
 A CH375 status event is not automatically the final answer to the operation you care about.
@@ -294,13 +296,14 @@ Connection and disconnection events may need to be consumed/recorded while the c
 
 ## 11. USB reset must always be released
 
-For this CH375 host mode sequence, mode `7` asserts a USB bus reset and mode `6` returns the controller to normal host operation.
+For this CH375 host mode sequence, mode `7` asserts a USB bus reset and mode `6` returns the controller to normal host operation. WCH Datasheet (I), Version 4 also documents mode `5` as host mode without SOF generation.
 
-A reset path must therefore guarantee:
+Starting with 0.4.12, generic root enumeration follows the documented sequence more explicitly:
 
 ```text
-mode 7 -> reset
-mode 6 -> release reset / resume host operation
+mode 5 -> host enabled, no SOF
+mode 7 -> assert USB reset
+mode 6 -> release reset / normal host operation with SOF
 ```
 
 Even error paths must return the controller to mode 6.
@@ -311,15 +314,15 @@ Leaving the controller in reset creates a wonderfully convincing imitation of de
 
 ## 12. Full-speed and low-speed enumeration may require different treatment
 
-Generic root enumeration eventually gained separate attempts rather than assuming every HID device behaves identically.
+Generic root enumeration must not assume every HID device runs at the same bus speed. WCH Datasheet (II), Version 4 documents `GET_DEV_RATE` in mode 5: bit 4 identifies a 1.5 Mbps low-speed device, otherwise the device is 12 Mbps full-speed.
 
-The implementation tries the normal path and also contains a legacy CH375B low-speed sequence derived from known CH375 host behaviour.
+Starting with 0.4.12, the documented speed-detection path is tried first. For a low-speed device, `SET_USB_SPEED 02h` is re-applied after the final `SET_USB_MODE`, because the datasheet explicitly says `SET_USB_MODE` restores full-speed operation.
 
-This is especially relevant to old boot-protocol HID devices.
+The older CH375B low-speed setup sequence remains in the source as a compatibility fallback rather than being discarded. This matters because the datasheet also warns that `SET_USB_SPEED` is not supported on every CH375 model/revision.
 
 ### Lesson
 
-Do not assume that "USB 1.x" means every device can be enumerated with exactly the same host-state sequence.
+Do not assume that "USB 1.x" means every device can be enumerated with exactly the same host-state sequence, and do not delete a proven hardware fallback merely because a cleaner documented path exists.
 
 A keyboard or mouse may be low-speed while a flash drive is full-speed.
 
@@ -693,7 +696,7 @@ This is especially dangerous for resident drivers because *the driver outlives t
 
 ## 28. Windows announces the transition: use it
 
-The 0.4.11 design handles the documented Windows enhanced-mode notifications through multiplex interrupt `INT 2Fh`:
+Introduced in 0.4.11 and retained in 0.4.12, the design handles the documented Windows enhanced-mode notifications through multiplex interrupt `INT 2Fh`:
 
 ```text
 AX=1605h  Windows enhanced-mode initialization
@@ -963,7 +966,7 @@ start Windows 95
 
 Windows starting successfully only when the mouse was *not* touched is a strong signal of leaked DOS-side mouse state.
 
-The 0.4.11 Windows-transition safeguards were created because of this exact class of failure.
+The Windows-transition safeguards introduced in 0.4.11 and retained in 0.4.12 were created because of this exact class of failure.
 
 ---
 
@@ -1133,9 +1136,102 @@ Finally test Windows 95 startup after actively using DOS HID.
 
 ---
 
+# CH375 DATASHEET AUDIT — 0.4.12
+
+The 0.4.12 low-level changes were made as a conservative delta from the known-good 0.4.11 code and checked directly against WCH **CH375 Datasheet (I), Version 4** and **CH375 Datasheet (II): USB Basic Transmission Commands, Version 4**. The goal was not to redesign the driver, but to replace assumptions with documented controller behaviour where that could be done without discarding proven compatibility paths.
+
+## 48. Command-port bit 7 is the parallel-mode INT# state
+
+Datasheet I states that reading the CH375 command port in parallel mode exposes the interrupt request on bit 7.
+
+The 0.4.12 control-transfer fallback therefore checks the pending-interrupt state before issuing `GET_STATUS`, instead of consuming status blindly. This reduces the risk of treating an unrelated or stale status byte as completion of the current operation.
+
+### Lesson
+
+On a polled CH375 host, `GET_STATUS` should correspond to a real pending controller event whenever possible.
+
+---
+
+## 49. Native DISK_SIZE data must actually be consumed
+
+`DISK_SIZE` returns an 8-byte capacity block containing both sector count and physical sector size. Earlier code mainly used command success as the probe result.
+
+Starting with 0.4.12, the native path reads and parses the returned capacity information. The current DOS block-device implementation is built around 512-byte logical sectors, so media reporting a different physical sector size is rejected safely rather than being accessed with an incorrect assumption.
+
+This is deliberately a validation step, not yet a sector-translation layer.
+
+---
+
+## 50. DISK_R_SENSE is an operation, not a fire-and-forget hint
+
+Datasheet I specifies that `DISK_R_SENSE` completes through an interrupt/status result and returns sense data through the CH375 data buffer.
+
+The 0.4.12 recovery path now waits for completion and drains the returned sense data before issuing the next native disk command. Otherwise the sense completion could remain pending and be mistaken for the status of the following operation.
+
+### Lesson
+
+When a CH375 command has an interrupt-completion contract, consume the whole command lifecycle before starting another one.
+
+---
+
+## 51. SET_RETRY must be considered part of controller state
+
+Datasheet II documents the `SET_RETRY` command and the reset default `85h`. In that default, NAK can be retried indefinitely inside the CH375. That behaviour is dangerous for resident polling code because an idle HID endpoint normally NAKs.
+
+The 0.4.12 generic path therefore programs retry policy explicitly after root reset and after configuration rather than relying on reset defaults. The CH375 built-in `DISK_*` firmware path is kept conservative and is not unnecessarily rewritten around the generic policy.
+
+### Lesson
+
+A bounded software wait is not enough if the controller itself has been configured to retry forever.
+
+---
+
+## 52. Control-transfer state must be cleared on failure too
+
+During the datasheet audit, a separate state bug was found: a failed zero-data control OUT request could leave `usb_control_wait` set. A later unrelated transfer could then inherit the long control-transfer wait path.
+
+0.4.12 clears this state on the failure path as well as the normal completion path.
+
+This fix is not a new USB feature; it is defensive state cleanup revealed while checking control-transfer behaviour against Datasheet II.
+
+---
+
+## 53. Some documented optimizations remain intentionally unused
+
+Datasheet II documents additional helpers such as `RD_USB_DATA0`, `ISSUE_TKN_X`, `DISK_MAX_LUN`, explicit endpoint toggle controls and simplified control requests. Not every documented command needs to replace known-good code immediately.
+
+For the first 0.4.12 audit:
+
+- `RD_USB_DATA0` is not substituted everywhere merely for its small efficiency gain;
+- multi-LUN support is not enabled yet;
+- non-512-byte media is detected but not translated;
+- low-speed devices behind an external hub remain experimental;
+- existing conservative 386-side software delays are retained even though Datasheet I now gives minimum timing values.
+
+### Lesson
+
+Documentation should guide changes, not force needless churn in a working retro driver.
+
+---
+
+## 54. Real-hardware regression test after the 0.4.12 audit
+
+The datasheet changes were tested on the same Pocket386 hardware used for 0.4.11. The following behaviour was observed:
+
+- USB mass storage remained usable;
+- USB keyboard remained usable;
+- live root-device replacement worked in the sequence **flash drive -> unplug -> keyboard -> flash drive**, with each newly attached device becoming usable without rebooting;
+- USB mouse functionality also remained working. An apparent mouse regression was traced to the machine's BIOS mouse setting being disabled, not to CH375USB.
+
+### Troubleshooting lesson
+
+On this Pocket386, if storage and keyboard still work but the mouse suddenly appears completely dead, verify the BIOS mouse setting before changing CH375USB. A firmware setting can imitate a driver regression surprisingly well.
+
+---
+
 # CURRENT KNOWN-GOOD FUNCTIONAL SUMMARY
 
-As of CH375USB 0.4.11 on the tested Pocket386:
+As of CH375USB 0.4.12 on the tested Pocket386:
 
 | Function | DOS | DOS hotplug | Windows 95 GUI |
 |---|---:|---:|---:|
@@ -1153,7 +1249,7 @@ For Windows storage, the USB drive should be detected under DOS before starting 
 
 # FUTURE WORK
 
-## 48. Windows HID needs its own protected-mode companion
+## 55. Windows HID needs its own protected-mode companion
 
 A sensible future architecture is:
 
@@ -1170,13 +1266,13 @@ Windows 95:
         USB mouse    -> Windows virtual mouse services
 ```
 
-The 0.4.11 DOS driver already contains the important opposite behaviour: it knows when to suspend its DOS HID bridge as Windows enters enhanced mode.
+The current 0.4.12 DOS driver already contains the important opposite behaviour: it knows when to suspend its DOS HID bridge as Windows enters enhanced mode.
 
 That separation should be preserved.
 
 ---
 
-## 49. Hub testing should be systematic
+## 56. Hub testing should be systematic
 
 When hub testing begins, use:
 
@@ -1214,6 +1310,9 @@ They were engineering lessons:
 13. **Use state machines and retry backoff for hotplug.**
 14. **Test the real application behaviour, not only packet-level success.**
 15. **Document what was actually tested separately from what merely exists in the source.**
+16. **Program CH375 retry policy explicitly; reset defaults are not always safe for polling.**
+17. **Consume the complete status/data lifecycle of native CH375 commands.**
+18. **Keep documented paths and real-hardware compatibility fallbacks when both are useful.**
 
 CH375USB reached working DOS storage, keyboard, mouse and hotplug not because the CH375 suddenly became simple, but because each layer was gradually isolated: controller, USB transport, DOS interfaces, hotplug state and finally the DOS-to-Windows boundary.
 
