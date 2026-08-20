@@ -17,7 +17,7 @@ The driver is intended for 386-class DOS machines such as the Pocket386 and curr
 | Device | DOS support | DOS hotplug | Windows 95 support | Windows 95 hotplug |
 |---|---|---|---|---|
 | USB mouse | Yes | Yes | No | No |
-| USB flash drive / mass storage | Yes | Yes | Yes, when loaded from `AUTOEXEC.BAT` with `DEVLOAD` before Windows starts | No |
+| USB flash drive / mass storage | Yes | Yes | Yes, when loaded from `AUTOEXEC.BAT` with `DEVLOAD` before Windows starts | Limited |
 | USB keyboard | Yes | Yes | No | No |
 
 ### USB mouse
