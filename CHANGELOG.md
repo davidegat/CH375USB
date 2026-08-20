@@ -16,6 +16,7 @@ The changelog starts with **0.4.12**; **0.4.11** is treated as the previous know
 - Clarified that hub support is implemented only experimentally and has not yet been validated on real hardware.
 - Clarified that CH375USB is a DOS driver; Windows 95 keyboard/mouse input is not supported, while the documented DOS-backed storage compatibility path remains available.
 - Explicitly documented that Windows 3.1 / Windows for Workgroups 3.11 have not been tested.
+- Added `KNOWN_ISSUES.md` as the persistent tracker for known bugs and deferred implementation TODOs; its first entry records that BOT `SYNCHRONIZE CACHE(10)` failures are not yet propagated back to DOS after a write.
 
 ## [0.4.12] - 2026-08-20
 
