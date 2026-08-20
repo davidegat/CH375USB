@@ -212,8 +212,57 @@ The source code in this project is independently written. No proprietary WCH dri
 
 See [`NOTICE.md`](NOTICE.md) for the detailed source/provenance and inspiration record, and [`KNOWLEDGE.md`](KNOWLEDGE.md) for the practical development knowledge gathered during the project.
 
-## Current limitations
+## Troubleshooting
 
-- Windows 95 USB keyboard and mouse support would require a separate protected-mode Windows driver; it is not provided by this release.
-- USB storage works in Windows 95 only with the pre-boot DOS/`DEVLOAD` method described above; Windows hotplug is not fully supported.
-- Hub support is experimental and not tested yet.
+### Windows 95 does not see the USB drive
+
+CH375USB does not provide native Windows USB mass-storage hotplug. For the tested Windows 95 compatibility path, connect the USB flash drive **before switching on the PC** and make sure DOS sees it before Windows starts. If the drive was not detected by CH375USB before `WIN`, do not expect Windows 95 to discover it later as a native USB device.
+
+### Windows 95 reports MS-DOS compatibility mode
+
+Do not load CH375USB from the Windows profile in `CONFIG.SYS`. Instead, leave the Windows `CONFIG.SYS` section without CH375USB and load the driver from `AUTOEXEC.BAT` with `DEVLOAD` immediately before starting Windows:
+
+```dos
+C:\DEVLOAD\DEVLOAD.COM C:\CH375USB.SYS
+WIN
+```
+
+The USB drive should already be connected and detected before `WIN` is executed. This is the tested workaround for using the real-mode storage driver with Windows 95; it is not a native Windows USB driver.
+
+### Mouse does not work or suddenly stops working
+
+Some old/recreated 386-class systems, including the Pocket386 used during development, have shown BIOS settings occasionally reverting or not being retained reliably. If the USB mouse does not work, or previously worked and then stops, enter the BIOS and check that **mouse support is enabled**. Check it again before debugging CH375USB: on this hardware the BIOS mouse option has been observed to become disabled unexpectedly.
+
+### USB flash drive is not recognized
+
+For maximum DOS/CH375 compatibility, use an **MBR (MS-DOS) partition table** with a **single primary FAT16 partition no larger than 2 GiB**. The USB device may physically be larger; the recommended DOS-compatible partition should be 2 GiB or smaller. CH375USB 0.4.12 currently accepts **512-byte physical sectors** on the native storage path.
+
+On a Windows PC, one example is to use Disk Management: delete the existing partitions on the USB drive, initialize/use it as **MBR**, create a primary partition of **2 GB or less**, and format that partition as **FAT** (FAT16). Be absolutely sure you selected the correct removable drive before deleting partitions.
+
+On Linux, for example, replacing `/dev/sdX` with the **correct USB device**:
+
+```sh
+sudo umount /dev/sdX?* 2>/dev/null
+sudo wipefs -a /dev/sdX
+sudo parted -s /dev/sdX mklabel msdos mkpart primary fat16 1MiB 2048MiB set 1 boot on
+sudo partprobe /dev/sdX
+sudo mkfs.fat -F 16 -n DOSUSB /dev/sdX1
+```
+
+**Warning:** these commands destroy the existing partition table and data on the selected device. Verify `/dev/sdX` before running them.
+
+If one flash drive still fails, try another, preferably an older/simple USB 2.0-era device. Flash-drive controller compatibility can vary on retro USB host hardware.
+
+### USB hub support
+
+Hub support is **experimental and untested**. The developer has started implementing support for one external hub with up to four downstream devices, but no real-hardware hub validation has been completed yet. For now, do not rely on it: connect the keyboard, mouse or storage device directly to the CH375 USB port.
+
+### Windows keyboard and mouse support
+
+CH375USB is primarily a **DOS driver**, not a native Windows USB driver. The Windows 95 exception is the limited USB-storage compatibility path described above, where a DOS-detected drive can remain available after Windows starts.
+
+USB keyboard and USB mouse support currently work in DOS only. Windows 95 does not recognize them through CH375USB in the GUI. Proper Windows input support would require a separate protected-mode Windows companion driver; such a component may be developed in the future.
+
+### Windows 3.1 / Windows for Workgroups 3.11
+
+CH375USB has **not been tested at all** under Windows 3.1 or Windows for Workgroups 3.11. Current Windows-related testing and documentation apply only to Windows 95. No compatibility claim is made for Windows 3.x.
