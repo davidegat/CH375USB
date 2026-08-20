@@ -8,6 +8,8 @@ License: **GNU GPL v3 or later (`GPL-3.0-or-later`)**
 
 CH375USB is an independent, unofficial project. It is not affiliated with or endorsed by Nanjing Qinheng Microelectronics Co., Ltd. (WCH). The names **WCH** and **CH375** are used only to identify compatible hardware. See [`NOTICE.md`](NOTICE.md).
 
+For the practical development history, failed approaches, hardware observations and lessons learned while building the driver on a real Pocket386, see [`KNOWLEDGE.md`](KNOWLEDGE.md).
+
 The driver is intended for 386-class DOS machines such as the Pocket386 and currently provides working USB mass-storage, USB keyboard and USB mouse support under DOS.
 
 ## Compatibility
@@ -74,7 +76,8 @@ Experimental support for one external USB hub with up to four downstream devices
 - `usb_maint.inc` — hotplug and re-enumeration maintenance.
 - `BUILD.BAT` / `build.sh` — NASM build scripts.
 - `LICENSE` — GNU GPL v3 license text.
-- `NOTICE.md` — project independence, provenance and compatibility notice.
+- `NOTICE.md` — project independence, provenance, sources and compatibility notice.
+- `KNOWLEDGE.md` — development knowledge, experiments, pitfalls and lessons learned from real-hardware testing.
 
 The distributed `CH375USB.SYS`, when present, is the binary built from the source code in this project. It is **not** the vendor `CH375286.SYS` driver.
 
@@ -200,7 +203,7 @@ CH375USB is released under **GPL-3.0-or-later**.
 
 The source code in this project is independently written. No proprietary WCH driver source code or vendor driver binary is included. Hardware interface behavior is implemented for compatibility with CH375 hardware using documented interface information and interoperability testing.
 
-See [`NOTICE.md`](NOTICE.md) for the full project notice.
+See [`NOTICE.md`](NOTICE.md) for the detailed source/provenance and inspiration record, and [`KNOWLEDGE.md`](KNOWLEDGE.md) for the practical development knowledge gathered during the project.
 
 ## Current limitations
 
