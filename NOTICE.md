@@ -17,6 +17,8 @@ No substantial third-party source-code block has been copied or transliterated i
 
 One specific hardware procedure deserves explicit attribution: the legacy CH375B low-speed setup sequence using command/data values `0Bh -> 17h -> D8h` was learned from W.ch/WinChipHead-derived CH375 USB-host examples, including the Makeblock `MeUSBHost` implementation and related Arduino CH375 material. CH375USB implements that procedure independently in NASM; the external C/C++ source itself was not copied.
 
+The 0.4.12-exp1-datasheet low-level audit was checked directly against WCH's **CH375 Datasheet (I), Version 4** (`CH375DS1.PDF`) and **CH375 Datasheet (II): USB Basic Transmission Commands, Version 4** (`CH375DS2.PDF`). Those documents were used as hardware/protocol specifications, not as source-code dependencies.
+
 When a release contains `CH375USB.SYS`, that file is the executable driver built from the source code in this project. It must not be confused with the vendor `CH375DOS.SYS` or FreddyV's `CH375286.SYS`.
 
 ## Sources, prior work and inspirations
@@ -25,8 +27,9 @@ The following material was consulted during development. Inclusion here does not
 
 ### WCH / WinChipHead documentation and examples
 
-- **Nanjing Qinheng Microelectronics (WCH) — CH375 datasheets and host-mode documentation.** These documents define the CH375 parallel interface, host modes, status values, native mass-storage commands and external-firmware USB operation used by this driver.  
+- **Nanjing Qinheng Microelectronics (WCH) — `CH375DS1.PDF`, CH375 Datasheet (I), Version 4.** This document defines the CH375 parallel host interface, command/data timing, host modes, interrupt/status behavior and native mass-storage commands. The 0.4.12-exp1-datasheet audit specifically used it to verify command-port bit 7 as the parallel-mode `INT#` state, the mode 5 / mode 7 / mode 6 host-reset sequence, `DISK_SIZE` result handling and `DISK_R_SENSE` completion behavior.  
   https://www.wch-ic.com/downloads/CH375DS1_PDF.html
+- **Nanjing Qinheng Microelectronics (WCH) — `CH375DS2.PDF`, CH375 Datasheet (II): USB Basic Transmission Commands, Version 4.** This document defines additional host-transaction commands and external-firmware transfer behavior. The 0.4.12-exp1-datasheet audit specifically used it for `SET_USB_SPEED`, `GET_DEV_RATE`, `SET_RETRY` (including the documented `25h` marker, NAK retry semantics and reset default `85h`), `SET_ENDP6`, `SET_ENDP7`, `ISSUE_TOKEN`, `ISSUE_TKN_X`, `CLR_STALL`, `RD_USB_DATA0`, and the documented setup/data/status stages of USB control transfers. The datasheet also notes that some commands, including `SET_USB_SPEED`, are not supported on every chip model/revision; CH375USB therefore retains compatibility fallbacks where appropriate.
 - **W.ch / WinChipHead USB 1.1 Host Examples for CH375 (historical 2004-2005 examples).** Used as a reference for CH375 host command sequencing and legacy low-speed behaviour. These examples are also acknowledged by later open-source CH375 projects such as Makeblock's `MeUSBHost`.
 - **WCH `CH375DOS.SYS` / historical W.ch DOS driver, including V1.9A.** Used only as a historical and behavioural reference for what CH375 storage support on DOS was expected to do. No vendor driver binary or source is distributed by this project.
 
@@ -65,7 +68,7 @@ These are protocol specifications, not source-code dependencies.
 
 - **Ralf Brown's Interrupt List (RBIL)** and mirrors of it were consulted for DOS/Windows interrupt interfaces, particularly the DOS mouse API and Windows enhanced-mode notifications through `INT 2Fh`, including `AX=1605h` and `AX=1606h`.
 - **Microsoft Windows 95 documentation** was consulted to distinguish real-mode DOS mouse/keyboard handling from Windows 95 protected-mode keyboard and mouse services. This led to the deliberate decision that CH375USB's DOS HID bridge must suspend itself during Windows enhanced mode rather than pretending to provide a native Windows input driver.
-- Historical Windows VxD/VKD/VMOUSE documentation and interrupt-reference material was consulted while assessing a possible future Windows companion driver. No Windows VxD code is included in release 0.4.11.
+- Historical Windows VxD/VKD/VMOUSE documentation and interrupt-reference material was consulted while assessing a possible future Windows companion driver. No Windows VxD code is included in release 0.4.12-exp1-datasheet.
 
 ### FreeDOS DEVLOAD
 

@@ -1,4 +1,4 @@
-; CH375USB 0.4.11 - ch375_native.inc
+; CH375USB 0.4.12-exp1 - ch375_native.inc
 ; Author: Davide "gat" - https://github.com/davidegat
 ; Copyright (C) 2026 Davide "gat"
 ; SPDX-License-Identifier: GPL-3.0-or-later
@@ -61,10 +61,12 @@ native_storage_try:
     mov byte [native_fail_stage],10h
 
 
-    mov al,CMD_SET_USB_MODE
-    call ch_cmd
+    ; Use the checked SET_USB_MODE helper.  Keep the CH375 reset-default
+    ; retry policy for the chip's built-in DISK_* firmware path: changing its
+    ; internal storage retry behavior is deliberately outside this audit.
     mov al,6
-    call ch_data_out
+    call ch_set_mode
+    jc .fail
 
 
     mov byte [enum_fail_stage],11h
@@ -102,16 +104,41 @@ native_storage_try:
     jc .size_recover
     mov [native_last_status],al
     cmp al,USB_INT_SUCCESS
-    je .size_ok
+    je .size_status_ok
 .size_recover:
-    mov al,CMD_DISK_SENSE
-    call ch_cmd
+    call native_request_sense_discard
     call native_short_settle
     loop .size_retry
     jmp .fail
 
-.size_ok:
+.size_status_ok:
+    ; Datasheet I says DISK_SIZE returns 8 bytes: total physical sectors
+    ; (big-endian dword) followed by bytes/sector (big-endian dword).
+    ; DOS-side CH375USB currently exposes 512-byte logical sectors, so read
+    ; and validate this value rather than silently assuming it.
+    push cs
+    pop es
+    mov di,capacity_buf
+    mov cx,8
+    call ch_read_packet
+    cmp ax,8
+    jb .fail
 
+    mov al,[capacity_buf+3]
+    mov ah,[capacity_buf+2]
+    mov [native_sector_count],ax
+    mov al,[capacity_buf+1]
+    mov ah,[capacity_buf+0]
+    mov [native_sector_count+2],ax
+
+    mov al,[capacity_buf+7]
+    mov ah,[capacity_buf+6]
+    mov [native_sector_size],ax
+    mov al,[capacity_buf+5]
+    mov ah,[capacity_buf+4]
+    mov [native_sector_size+2],ax
+    cmp dword [native_sector_size],512
+    jne .fail
 
     mov byte [enum_fail_stage],14h
     mov byte [native_fail_stage],14h
@@ -125,8 +152,7 @@ native_storage_try:
     cmp al,USB_INT_SUCCESS
     je .ready_ok
 .ready_recover:
-    mov al,CMD_DISK_SENSE
-    call ch_cmd
+    call native_request_sense_discard
     call native_short_settle
     loop .ready_retry
     jmp .fail
@@ -178,6 +204,37 @@ native_storage_try:
     ret
 
 
+; DISK_R_SENSE is an interrupt-producing command.  Datasheet I requires
+; reading its completion status and then the returned data; leaving that
+; interrupt/data pending can corrupt the status observed by the next DISK_* command.
+native_request_sense_discard:
+    push ax
+    push cx
+    push di
+    push es
+    mov al,CMD_DISK_SENSE
+    call ch_cmd
+    call native_wait_cmd_status
+    jc .fail
+    cmp al,USB_INT_SUCCESS
+    jne .fail
+    push cs
+    pop es
+    mov di,sense_buf
+    mov cx,18
+    call ch_read_packet
+    clc
+    jmp .done
+.fail:
+    stc
+.done:
+    pop es
+    pop di
+    pop cx
+    pop ax
+    ret
+
+
 native_short_settle:
     push ax
     push cx
@@ -203,8 +260,7 @@ native_disk_ready_check:
     cmp al,USB_INT_SUCCESS
     je .ok
 .sense:
-    mov al,CMD_DISK_SENSE
-    call ch_cmd
+    call native_request_sense_discard
     call delay_10ms
     loop .retry
     pop cx

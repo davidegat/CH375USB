@@ -1,4 +1,4 @@
-; CH375USB 0.4.11 - usb_core.inc
+; CH375USB 0.4.12-exp1 - usb_core.inc
 ; Author: Davide "gat" - https://github.com/davidegat
 ; Copyright (C) 2026 Davide "gat"
 ; SPDX-License-Identifier: GPL-3.0-or-later
@@ -277,6 +277,9 @@ usb_control_out0_slot:
     clc
     ret
 .fail:
+    ; Keep later transfers from inheriting the long control-wait mode after
+    ; a failed zero-data control request.
+    mov byte [usb_control_wait],0
     pop es
     pop di
     pop si
@@ -451,6 +454,10 @@ usb_enumerate_addr0:
     call usb_set_configuration
     jc .fail
 
+    ; Keep normal idle NAKs visible to software after enumeration.  This is
+    ; the documented SET_RETRY policy used by the fast HID/BOT polling paths.
+    mov al,CH375_RETRY_FAST
+    call ch_set_retry
 
     mov byte [enum_fail_stage],09h
     mov ax,0

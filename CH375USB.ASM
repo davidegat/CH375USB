@@ -1,4 +1,4 @@
-; CH375USB.SYS 0.4.11 - DOS USB host driver for CH375 ISA at I/O 0260h
+; CH375USB.SYS 0.4.12-exp1 - DOS USB host driver for CH375 ISA at I/O 0260h
 ; Author: Davide "gat" - https://github.com/davidegat
 ; Copyright (C) 2026 Davide "gat"
 ; SPDX-License-Identifier: GPL-3.0-or-later
@@ -11,7 +11,7 @@ BITS 16
 CPU 386
 ORG 0
 
-%define DRIVER_VERSION      '0.4.11'
+%define DRIVER_VERSION      '0.4.12-exp1'
 %define IO_BASE             0260h
 %define DATA_PORT           IO_BASE
 %define CMD_PORT            (IO_BASE+1)
@@ -132,6 +132,8 @@ native_last_status db 0
 native_probe20     db 0
 native_timeout_kind db 0
 native_fail_stage db 0
+native_sector_count dd 0
+native_sector_size  dd 512
 media_ready     db 0
 media_changed   db 1
 part_lba        dd 0
@@ -177,7 +179,9 @@ mouse_cb_mask      dw 0
 mouse_cb_off       dw 0
 mouse_cb_seg       dw 0
 
-usb_speed_mode   db 0
+usb_speed_mode      db 0
+usb_detected_speed db 0
+usb_legacy_low_speed db 0
 
 devices:
     times MAX_DEVICES*DEV_SIZE db 0
@@ -234,7 +238,7 @@ hub_ports       db 0
 hub_status      times 4 db 0
 
 
-msg_banner      db 13,10,'CH375USB 0.4.11 - DOS USB host driver for CH375 ISA',13,10,'$'
+msg_banner      db 13,10,'CH375USB 0.4.12-exp1 - DOS USB host driver for CH375 ISA',13,10,'$'
 msg_desc        db 'Storage / HID keyboard-mouse / hotplug | I/O 0260h',13,10,'$'
 msg_author      db 'Author: Davide (gat) | License: GPL-3.0-or-later',13,10,'$'
 msg_chipok      db 'Controller: CH375 detected.',13,10,'$'

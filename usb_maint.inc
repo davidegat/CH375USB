@@ -1,4 +1,4 @@
-; CH375USB 0.4.11 - usb_maint.inc
+; CH375USB 0.4.12-exp1 - usb_maint.inc
 ; Author: Davide "gat" - https://github.com/davidegat
 ; Copyright (C) 2026 Davide "gat"
 ; SPDX-License-Identifier: GPL-3.0-or-later
@@ -140,17 +140,40 @@ root_reenumerate:
 generic_root_enumerate:
     push ax
 
-    mov byte [usb_speed_mode],0
+    ; Prefer the documented DS2 speed detection path.  GET_DEV_RATE itself
+    ; is not available on every CH375 revision, so the old low-speed sequence
+    ; remains a final compatibility fallback rather than the primary path.
+    mov byte [usb_legacy_low_speed],0
+    call ch_detect_root_speed
+
     call generic_root_enumerate_wch
     jnc .ok
 
-    mov byte [usb_speed_mode],1
-    call generic_root_enumerate_wch
-    jnc .ok
-
-
-    mov byte [usb_speed_mode],0
+    ; Some devices have configuration descriptors that exceed the built-in
+    ; GET_DESCR 64-byte control buffer; retry the detected speed using the
+    ; manual control-transfer enumeration path.
+    mov al,[usb_detected_speed]
+    mov [usb_speed_mode],al
     call generic_root_enumerate_manual
+    jnc .ok
+
+    ; GET_DEV_RATE is documented as unsupported on some chip revisions.  If
+    ; the detected result was unusable, try the opposite documented speed
+    ; before resorting to the old compatibility sequence.
+    mov al,[usb_detected_speed]
+    xor al,1
+    mov [usb_speed_mode],al
+    call generic_root_enumerate_wch
+    jnc .ok
+    call generic_root_enumerate_manual
+    jnc .ok
+
+    ; Final compatibility attempt: reproduce the legacy 0.4.11 low-speed
+    ; sequence only after all documented paths failed.
+    mov byte [usb_speed_mode],0
+    mov byte [usb_legacy_low_speed],1
+    call generic_root_enumerate_wch
+    mov byte [usb_legacy_low_speed],0
     jc .fail
 .ok:
     pop ax
@@ -173,11 +196,9 @@ generic_root_enumerate_wch:
     jc .fail
 
 
-    cmp byte [usb_speed_mode],1
+    cmp byte [usb_legacy_low_speed],1
     jne .speed_ready
     call ch_set_low_speed_legacy
-
-
     call delay_10ms
 .speed_ready:
 
@@ -239,12 +260,8 @@ generic_root_enumerate_wch:
     jc .fail
 
 
-    mov al,CMD_SET_RETRY
-    call ch_cmd
-    mov al,025h
-    call ch_data_out
-    xor al,al
-    call ch_data_out
+    mov al,CH375_RETRY_FAST
+    call ch_set_retry
 
 
     xor ax,ax

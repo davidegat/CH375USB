@@ -1,6 +1,8 @@
 # CH375USB
 
-**CH375USB 0.4.11** is an open-source resident MS-DOS USB host driver for ISA CH375 controllers using the common parallel I/O mapping at `0260h` / `0261h`.
+**CH375USB 0.4.12-exp1-datasheet** is an open-source resident MS-DOS USB host driver for ISA CH375 controllers using the common parallel I/O mapping at `0260h` / `0261h`.
+
+This experimental build keeps the same DOS-facing functionality as 0.4.11 while tightening low-level CH375 reset, speed/retry handling, status processing and native-storage behavior against WCH CH375 Datasheet (I) and Datasheet (II), Version 4.
 
 Author: **Davide "gat"**  
 GitHub: **https://github.com/davidegat**  
