@@ -6,7 +6,16 @@ The changelog starts with **0.4.12**; **0.4.11** is treated as the previous know
 
 ## [Unreleased]
 
-- No changes yet.
+### Documentation
+
+- Replaced the README `Current limitations` section with a practical troubleshooting guide.
+- Documented the Windows 95 requirement to have USB storage connected and detected before Windows starts.
+- Documented the `AUTOEXEC.BAT` / `DEVLOAD` workaround when Windows 95 reports MS-DOS compatibility mode instead of loading CH375USB from the Windows `CONFIG.SYS` profile.
+- Added the Pocket386 BIOS mouse-support check for cases where the USB mouse unexpectedly stops working.
+- Added the recommended USB-storage layout: MBR partition table, one primary FAT16 partition no larger than 2 GiB, with Windows and Linux formatting examples.
+- Clarified that hub support is implemented only experimentally and has not yet been validated on real hardware.
+- Clarified that CH375USB is a DOS driver; Windows 95 keyboard/mouse input is not supported, while the documented DOS-backed storage compatibility path remains available.
+- Explicitly documented that Windows 3.1 / Windows for Workgroups 3.11 have not been tested.
 
 ## [0.4.12] - 2026-08-20
 
