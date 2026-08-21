@@ -29,8 +29,9 @@ Prebuilt 0.5.0 `CH375USB.SYS` and `CH375MOU.DRV` binaries are published in [`bin
 - The BIOS PS/2 shim mirrors supported configuration requests to the USB side while allowing the physical BIOS to remain authoritative when it succeeds. This is intended to permit physical PS/2 and CH375 USB mouse coexistence through one DOS mouse driver.
 - The Windows mouse companion uses processed `INT 33h` position/callback data and leaves Windows responsible for acceleration behavior.
 - Windows-side USB mouse re-enumeration is split into a staged state machine instead of performing full controller reset/enumeration inside one timer invocation.
-- `build.sh` now builds both `CH375USB.SYS` and `CH375MOU.DRV`, bootstraps a project-local Open Watcom V2 toolchain when needed, and rejects linker warnings or malformed NE output.
-- `BUILD.BAT` remains a simple DOS/Windows command-line build of `CH375USB.SYS` only.
+- `build.sh` builds both `CH375USB.SYS` and `CH375MOU.DRV`, bootstraps a project-local Open Watcom V2 toolchain when needed, rejects linker warnings or malformed NE output, and shares the portable `CH375MOU.LNK` response file with the DOS build.
+- `BUILD.BAT` now builds **both** `CH375USB.SYS` and `CH375MOU.DRV` under native DOS/Windows 9x DOS mode, using NASM from `C:\NASM` and the Open Watcom DOS-host WASM/WLINK tools from `C:\OPENWAT\BINW`.
+- `CH375MOU.LNK` now uses an 8.3-safe root `CH375MOU.OBJ` path so the same Win16 linker definition works under both Linux/Unix and real DOS.
 - Release documentation is organized under `documentation/` for `NOTICE.md`, `KNOWLEDGE.md` and `KNOWN_ISSUES.md`; prebuilt release binaries are organized under `binary/`.
 
 ### Compatibility status
@@ -51,7 +52,8 @@ The 0.5.0 mouse path deliberately avoids injecting mouse bytes through the physi
 
 - Prebuilt 0.5.0 binaries are published as `binary/CH375USB.SYS` and `binary/CH375MOU.DRV`.
 - The stale tracked `CH375USB.SYS` 0.4.13 binary was removed before the 0.5.0 binary was published.
-- `build.sh` and `BUILD.BAT` still produce local build outputs in the working-tree root; `binary/` contains the published release copies.
+- Both `build.sh` and `BUILD.BAT` produce local `CH375USB.SYS`, `CH375MOU.DRV` and `CH375MOU.MAP` outputs in the working-tree root; `binary/` contains the published release copies.
+- The native DOS build requires a DOS NASM installation at `C:\NASM` and Open Watcom V2 for DOS/Win16 at `C:\OPENWAT`.
 
 ### Still open / experimental
 
