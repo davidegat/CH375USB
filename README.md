@@ -1,8 +1,18 @@
-# CH375USB 0.4.12
+# CH375USB 0.4.13
 
-**CH375USB 0.4.12** is an open-source resident MS-DOS USB host driver for ISA CH375 controllers using the common parallel I/O mapping at `0260h` / `0261h`.
+**CH375USB 0.4.13** is an open-source resident MS-DOS USB host driver for ISA CH375 controllers using the common parallel I/O mapping at `0260h` / `0261h`.
 
-This experimental build keeps the same DOS-facing functionality as 0.4.11 while tightening low-level CH375 reset, speed/retry handling, status processing and native-storage behavior against WCH CH375 Datasheet (I) and Datasheet (II), Version 4.
+Version 0.4.13 promotes the hardware-tested 0.4.12 experimental line and keeps the datasheet-audit improvements while adding several correctness fixes discovered during a subsequent code review.
+
+The main 0.4.13 fixes are:
+
+- correct DOS Media Check semantics after storage hotplug (`FFh` for changed media, `01h` for unchanged media);
+- use the device's real EP0 maximum packet size during manual control-IN transfers instead of assuming 64 bytes;
+- isolate the CPU Direction Flag around resident `LODSB`/`STOSB` USB packet operations;
+- report the number of sectors actually transferred when a DOS block read/write fails part-way through;
+- initialize BOT/SCSI mass storage when the CH375 built-in generic enumeration path recognizes an MSC interface.
+
+USB mass storage, USB keyboard and USB mouse were regression-tested on the target DOS hardware after these changes and all three classes worked correctly with live plug-and-play/hotplug behavior.
 
 Author: **Davide "gat"**  
 GitHub: **https://github.com/davidegat**  
@@ -58,6 +68,7 @@ The driver is intended for 386-class DOS machines such as the Pocket386 and curr
 - USB flash drive: read/write and DOS hotplug working.
 - USB HID keyboard: DOS input and hotplug working.
 - USB HID mouse: DOS input and hotplug working.
+- CH375USB 0.4.13: storage, keyboard and mouse verified working with live attach/detach and plug-and-play under DOS after the 0.4.13 correctness fixes.
 
 The Pocket386 used for testing was configured with non-standard, performance-oriented BIOS settings intended to speed up the 386. These settings are more aggressive than typical defaults and may reduce system stability on some machines:
 
@@ -85,6 +96,7 @@ They are not required by the driver. Standard or more conservative BIOS settings
 - `LICENSE` — GNU GPL v3 license text.
 - `NOTICE.md` — project independence, provenance, sources and compatibility notice.
 - `KNOWLEDGE.md` — development knowledge, experiments, pitfalls and lessons learned from real-hardware testing.
+- `KNOWN_ISSUES.md` — confirmed open issues, deferred work and review candidates still requiring targeted validation.
 
 The distributed `CH375USB.SYS`, when present, is the binary built from the source code in this project. It is **not** the vendor `CH375286.SYS` driver.
 
@@ -235,7 +247,7 @@ Some old/recreated 386-class systems, including the Pocket386 used during develo
 
 ### USB flash drive is not recognized
 
-For maximum DOS/CH375 compatibility, use an **MBR (MS-DOS) partition table** with a **single primary FAT16 partition no larger than 2 GiB**. The USB device may physically be larger; the recommended DOS-compatible partition should be 2 GiB or smaller. CH375USB 0.4.12 currently accepts **512-byte physical sectors** on the native storage path.
+For maximum DOS/CH375 compatibility, use an **MBR (MS-DOS) partition table** with a **single primary FAT16 partition no larger than 2 GiB**. The USB device may physically be larger; the recommended DOS-compatible partition should be 2 GiB or smaller. CH375USB 0.4.13 currently accepts **512-byte physical sectors** on the native storage path.
 
 On a Windows PC, one example is to use Disk Management: delete the existing partitions on the USB drive, initialize/use it as **MBR**, create a primary partition of **2 GB or less**, and format that partition as **FAT** (FAT16). Be absolutely sure you selected the correct removable drive before deleting partitions.
 
