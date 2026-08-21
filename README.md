@@ -169,7 +169,7 @@ https://www.vogons.org/viewtopic.php?start=100&t=99751
 
 - `CH375USB.ASM` — unified resident driver source and DOS block-device interface.
 - `CH375MOU.ASM` — independently written Win16 mouse-driver bridge source.
-- `CH375MOU.LNK` — Open Watcom linker definition for the Win16 driver.
+- `CH375MOU.LNK` — shared Open Watcom linker definition for the Win16 driver; used by both build scripts.
 - `bios_mouse.inc` — virtual BIOS PS/2 mouse interface.
 - `win_hotplug.inc` — bounded Windows root HID-mouse hotplug state machine.
 - `ch375_defs.inc` — CH375/USB constants.
@@ -180,8 +180,8 @@ https://www.vogons.org/viewtopic.php?start=100&t=99751
 - `usb_hid.inc` — USB HID keyboard/mouse support and typematic handling.
 - `usb_hub.inc` — experimental external-hub support.
 - `usb_maint.inc` — hotplug and deferred maintenance.
-- `BUILD.BAT` — builds the unified `CH375USB.SYS` with NASM.
-- `build.sh` — builds `CH375USB.SYS` and `CH375MOU.DRV` on Linux/Unix and validates the Win16 NE image.
+- `BUILD.BAT` — native-DOS build of **both** `CH375USB.SYS` and `CH375MOU.DRV` using NASM and Open Watcom from fixed DOS paths.
+- `build.sh` — Linux/Unix build of both drivers; bootstraps Open Watcom and validates the Win16 NE image.
 - `CHANGELOG.md` — release history.
 - [`documentation/KNOWN_ISSUES.md`](documentation/KNOWN_ISSUES.md) — current open issues, hardware caveats and deferred work.
 - [`documentation/KNOWLEDGE.md`](documentation/KNOWLEDGE.md) — engineering notes and architecture.
@@ -284,7 +284,7 @@ With this setup:
 
 ## Windows 95 mouse companion
 
-Use the prebuilt [`binary/CH375MOU.DRV`](binary/CH375MOU.DRV), or build `CH375MOU.DRV` locally with `build.sh`.
+Use the prebuilt [`binary/CH375MOU.DRV`](binary/CH375MOU.DRV), or build `CH375MOU.DRV` locally with `build.sh` or `BUILD.BAT`.
 
 Typical setup:
 
@@ -334,23 +334,106 @@ The repository's published prebuilt copies live in `binary/`; local builds are i
 
 Open Watcom is downloaded into the project-local `.toolchains/` directory when required. The build checks that `CH375MOU.DRV` is actually a Win16 NE DLL/driver before reporting success.
 
-### DOS / Windows command prompt
+### Native DOS / Windows 9x DOS mode
+
+`BUILD.BAT` now builds **both release drivers**, using the same essential assembler/linker options as `build.sh`:
+
+```text
+CH375USB.ASM -- NASM -f bin --------------------------> CH375USB.SYS
+CH375MOU.ASM -- WASM -q -2 -fo=CH375MOU.OBJ --------> CH375MOU.OBJ
+CH375MOU.OBJ -- WLINK @CH375MOU.LNK -----------------> CH375MOU.DRV
+                                                       CH375MOU.MAP
+```
+
+The DOS build deliberately uses fixed, simple 8.3-safe tool locations. Before running `BUILD.BAT`, install/extract the tools exactly as follows:
+
+```text
+C:\NASM\NASM.EXE
+C:\OPENWAT\BINW\WASM.EXE
+C:\OPENWAT\BINW\WLINK.EXE
+```
+
+#### Open Watcom V2 for DOS / Win16
+
+Use the **Open Watcom V2 C/C++ installer for DOS/16-bit Windows** and install it with the root directory set to `C:\OPENWAT`.
+
+- Open Watcom V2 releases/download page: https://github.com/open-watcom/open-watcom-v2/releases
+- Direct current DOS/Win16 C/C++ installer: https://github.com/open-watcom/open-watcom-v2/releases/download/Current-build/open-watcom-2_0-c-dos.exe
+
+For the native DOS host, Open Watcom's tools are under `BINW`; `BUILD.BAT` expects `WASM.EXE`, `WLINK.EXE` and the linker system-definition files there. It sets:
+
+```dos
+SET WATCOM=C:\OPENWAT
+SET EDPATH=C:\OPENWAT\EDDAT
+SET INCLUDE=C:\OPENWAT\H
+SET PATH=C:\NASM;C:\OPENWAT\BINW;%PATH%
+```
+
+It also points `WLINK_LNK` at `C:\OPENWAT\BINW\WLINK.LNK` when that file is present. This is important because `CH375MOU.DRV` must be linked as a **16-bit Windows NE DLL/driver**, not as an ordinary Windows executable.
+
+#### NASM for DOS
+
+Use a **native DOS NASM executable**, not the Win32/Win64 package. The recommended known DOS distribution for this build is NASM **2.16.03**:
+
+- NASM 2.16.03 DOS release directory: https://www.nasm.us/pub/nasm/releasebuilds/2.16.03/dos/
+- NASM project/download information: https://www.nasm.us/
+
+Extract/copy the DOS `NASM.EXE` so that the final path is:
+
+```text
+C:\NASM\NASM.EXE
+```
+
+NASM's flat `bin` output is used for the DOS `.SYS`; Open Watcom WASM emits the OMF object used by WLINK for the Win16 `.DRV`.
+
+#### Run the DOS build
+
+From the CH375USB source directory:
 
 ```dos
 BUILD.BAT
 ```
 
-`BUILD.BAT` builds only the unified `CH375USB.SYS` into the current directory.
+A successful build produces in the source directory:
 
-Equivalent SYS command:
-
-```sh
-nasm -f bin CH375USB.ASM -o CH375USB.SYS
+```text
+CH375USB.SYS
+CH375MOU.DRV
+CH375MOU.MAP
 ```
 
-`CH375USB.ASM` includes the `.inc` modules in the same directory.
+`CH375MOU.OBJ` is temporary and is removed after a successful link.
+
+The batch file also refuses a `CH375MOU.DRV` build when WLINK reports `Warning!`, because a misconfigured Open Watcom linker can otherwise emit an apparently usable file with the wrong Windows image configuration.
+
+The Linux build additionally performs a Python-level inspection of the final NE header. The native DOS batch does not require Python; it relies on the explicit `CH375MOU.LNK` Win16 DLL/driver definition, WLINK's exit status, warning check and final-file existence check.
 
 ## Troubleshooting
+
+### DOS BUILD.BAT says NASM is missing
+
+The batch file does not search arbitrary locations. It requires:
+
+```text
+C:\NASM\NASM.EXE
+```
+
+Install/extract the native DOS NASM package there, then run `BUILD.BAT` again.
+
+### DOS BUILD.BAT says Open Watcom is missing
+
+It requires the DOS-host Open Watcom tools at:
+
+```text
+C:\OPENWAT\BINW\WASM.EXE
+C:\OPENWAT\BINW\WLINK.EXE
+```
+
+If Open Watcom was installed somewhere else, reinstall/move it to `C:\OPENWAT` or edit the two root variables at the top of `BUILD.BAT` deliberately.
+
+### WLINK warns or CH375MOU.DRV is not produced
+
+Do not ignore the warning. Make sure the **DOS/Win16 Open Watcom distribution** is installed, `C:\OPENWAT\BINW` is intact, and `WLINK.LNK` is present there. The named Windows linker definitions must be available when `CH375MOU.LNK` requests a Windows DLL/driver image.
 
 ### Mouse worked before, but is now completely dead
 
