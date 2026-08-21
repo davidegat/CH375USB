@@ -28,7 +28,12 @@ The low-level CH375 audit was checked against WCH's **CH375 Datasheet (I), Versi
 
 ## Binary distribution
 
-Prebuilt 0.5.0 `CH375USB.SYS` and `CH375MOU.DRV` binaries are published alongside the source. They are build outputs of this project and must not be confused with vendor or third-party binaries.
+Prebuilt 0.5.0 binaries are published under [`../binary/`](../binary/):
+
+- [`CH375USB.SYS`](../binary/CH375USB.SYS)
+- [`CH375MOU.DRV`](../binary/CH375MOU.DRV)
+
+They are build outputs of this project and must not be confused with vendor or third-party binaries.
 
 ## Sources, prior work and inspirations
 
