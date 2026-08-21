@@ -461,7 +461,8 @@ drv_read:
     cmp byte [media_ready],1
     jne .nr
 .have_media:
-    mov byte [usb_busy],1
+    call usb_lock_try
+    jc .busy
     mov cx,[es:bx+18]
     jcxz .done_ok
 
@@ -483,6 +484,9 @@ drv_read:
 .have_lba:
     add ax,[part_lba]
     adc dx,[part_lba+2]
+    jc .range_fail
+    call storage_range_valid
+    jc .range_fail
 
 .loop:
     push ax
@@ -503,12 +507,12 @@ drv_read:
 .ptr_ok:
     loop .loop
 .done_ok:
-    mov byte [usb_busy],0
+    call usb_unlock
     les bx,[request_off]
     mov word [es:bx+3],ST_DONE
     ret
 .fail:
-    mov byte [usb_busy],0
+    call usb_unlock
     ; DOS requires request+18 to contain the number of sectors actually
     ; transferred even when the request ends with an error. CX still includes
     ; the sector whose read failed, so requested-CX is the completed count.
@@ -520,6 +524,16 @@ drv_read:
     sub ax,cx
     mov [es:bx+18],ax
     mov word [es:bx+3],ST_DONE|ST_ERROR|ERR_READ_FAULT
+    ret
+.range_fail:
+    call usb_unlock
+    les bx,[request_off]
+    mov word [es:bx+18],0
+    mov word [es:bx+3],ST_DONE|ST_ERROR|ERR_SECTOR_NOT_FOUND
+    ret
+.busy:
+    mov word [es:bx+18],0
+    mov word [es:bx+3],ST_DONE|ST_ERROR|ERR_GENERAL
     ret
 .nr:
     mov word [es:bx+3],ST_DONE|ST_ERROR|ERR_DRIVE_NOT_READY
@@ -533,7 +547,8 @@ drv_write:
     cmp byte [media_ready],1
     jne .nr
 .have_media:
-    mov byte [usb_busy],1
+    call usb_lock_try
+    jc .busy
     mov byte [write_verify],0
     cmp byte [es:bx+2],9
     jne .wv_set
@@ -558,6 +573,9 @@ drv_write:
 .have_lba:
     add ax,[part_lba]
     adc dx,[part_lba+2]
+    jc .range_fail
+    call storage_range_valid
+    jc .range_fail
 
 .loop:
     push ax
@@ -591,16 +609,15 @@ drv_write:
     loop .loop
 %if SYNC_AFTER_WRITE = 1
     call storage_sync_cache
-
-
+    jc .fail
 %endif
 .done_ok:
-    mov byte [usb_busy],0
+    call usb_unlock
     les bx,[request_off]
     mov word [es:bx+3],ST_DONE
     ret
 .fail:
-    mov byte [usb_busy],0
+    call usb_unlock
     ; Preserve DOS partial-transfer semantics on write errors too. CX includes
     ; the failed sector, so requested-CX is the number completed successfully.
     push cx
@@ -612,6 +629,16 @@ drv_write:
     mov [es:bx+18],ax
     mov word [es:bx+3],ST_DONE|ST_ERROR|ERR_WRITE_FAULT
     ret
+.range_fail:
+    call usb_unlock
+    les bx,[request_off]
+    mov word [es:bx+18],0
+    mov word [es:bx+3],ST_DONE|ST_ERROR|ERR_SECTOR_NOT_FOUND
+    ret
+.busy:
+    mov word [es:bx+18],0
+    mov word [es:bx+3],ST_DONE|ST_ERROR|ERR_GENERAL
+    ret
 .nr:
     mov word [es:bx+3],ST_DONE|ST_ERROR|ERR_DRIVE_NOT_READY
     ret
@@ -621,6 +648,28 @@ storage_fail_soft:
 
 
     mov byte [maintenance_due],1
+    ret
+
+
+; Serialize all access to the single CH375 controller. XCHG with a memory
+; operand is atomic on 386+, so an IRQ cannot slip between a separate test
+; and set. CF=0 means the lock was acquired; CF=1 means another context owns it.
+usb_lock_try:
+    push ax
+    mov al,1
+    xchg al,[usb_busy]
+    or al,al
+    jnz .busy
+    pop ax
+    clc
+    ret
+.busy:
+    pop ax
+    stc
+    ret
+
+usb_unlock:
+    mov byte [usb_busy],0
     ret
 
 print_boot_summary:
@@ -712,9 +761,8 @@ timer_1c:
     je .chain
     cmp byte [usb_present],1
     jne .chain
-    cmp byte [usb_busy],0
-    jne .chain
-
+    call usb_lock_try
+    jc .chain
 
     cmp byte [root_retry_ticks],0
     je .retry_ok
@@ -757,7 +805,7 @@ timer_1c:
     mov byte [root_event],1
     mov byte [maintenance_due],1
     mov byte [root_retry_ticks],18
-    jmp .chain
+    jmp .unlock_chain
 
 .evt_disconnect:
     cmp byte [root_link_state],0
@@ -767,11 +815,9 @@ timer_1c:
     mov byte [maintenance_due],1
     mov byte [root_retry_ticks],9
     call mark_all_detached_fast
-    jmp .chain
+    jmp .unlock_chain
 
 .hid:
-
-    mov byte [usb_busy],1
     xor si,si
 .hloop:
     cmp si,MAX_DEVICES
@@ -793,7 +839,7 @@ timer_1c:
     inc si
     jmp .hloop
 .hdone:
-    mov byte [usb_busy],0
+    call usb_unlock
 
     ; Mouse state must advance even while a DOS application never calls INT 28h.
     ; The USB report has already been read; only the software INT 33h bridge runs here.
@@ -803,7 +849,10 @@ timer_1c:
     cmp byte [mouse_int33_hooked],1
     jne .chain
     call mouse_apply_pending
+    jmp .chain
 
+.unlock_chain:
+    call usb_unlock
 .chain:
     pop es
     pop ds
