@@ -1,4 +1,4 @@
-; CH375USB 0.4.11 - usb_hid.inc
+; CH375USB 0.4.13 - usb_hid.inc
 ; Author: Davide "gat" - https://github.com/davidegat
 ; Copyright (C) 2026 Davide "gat"
 ; SPDX-License-Identifier: GPL-3.0-or-later
@@ -778,10 +778,8 @@ mouse_poll_on_demand:
 
     cmp byte [usb_present],1
     jne .done
-    cmp byte [usb_busy],0
-    jne .apply
-
-    mov byte [usb_busy],1
+    call usb_lock_try
+    jc .apply
     xor si,si
 .scan:
     cmp si,MAX_DEVICES
@@ -799,7 +797,7 @@ mouse_poll_on_demand:
     jmp .scan
 
 .polled:
-    mov byte [usb_busy],0
+    call usb_unlock
 
 .apply:
     cmp byte [mouse_pending],1
