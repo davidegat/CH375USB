@@ -1,4 +1,4 @@
-; CH375USB 0.4.12-exp1 - ch375_hw.inc
+; CH375USB 0.4.13 - ch375_hw.inc
 ; Author: Davide "gat" - https://github.com/davidegat
 ; Copyright (C) 2026 Davide "gat"
 ; SPDX-License-Identifier: GPL-3.0-or-later
@@ -847,6 +847,8 @@ ch_set_out_toggle:
 
 
 ch_write_packet:
+    pushf
+    cld
     push ax
     push cx
     mov al,CMD_WR_USB_DATA7
@@ -861,10 +863,13 @@ ch_write_packet:
 .done:
     pop cx
     pop ax
+    popf
     ret
 
 
 ch_read_packet:
+    pushf
+    cld
     push bx
     push cx
     push dx
@@ -894,6 +899,7 @@ ch_read_packet:
     pop dx
     pop cx
     pop bx
+    popf
     ret
 
 
