@@ -1,0 +1,18 @@
+# CH375MOU.DRV - explicit Win16 NE DLL/driver link definition
+# Pure assembly: no Open Watcom C DLL startup is used.
+format windows dll initglobal
+option nodefaultlibs
+option start=Initialize
+name CH375MOU.DRV
+file .build/CH375MOU.OBJ
+option modname=MOUSE
+option description 'CH375USB INT33 Windows mouse bridge'
+option oneautodata
+option map=CH375MOU.MAP
+segment CALLBACKS PRELOAD FIXED EXECUTEREAD
+segment DATASEG PRELOAD FIXED READWRITE
+export Inquire.1
+export Enable.2
+export Disable.3
+export MouseGetIntVect.4
+export WEP
