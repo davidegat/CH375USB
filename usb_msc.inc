@@ -1,4 +1,4 @@
-; CH375USB 0.4.11 - usb_msc.inc
+; CH375USB 0.4.13 - usb_msc.inc
 ; Author: Davide "gat" - https://github.com/davidegat
 ; Copyright (C) 2026 Davide "gat"
 ; SPDX-License-Identifier: GPL-3.0-or-later
