@@ -1,4 +1,4 @@
-; CH375USB 0.4.12-exp1 - ch375_native.inc
+; CH375USB 0.4.13 - ch375_native.inc
 ; Author: Davide "gat" - https://github.com/davidegat
 ; Copyright (C) 2026 Davide "gat"
 ; SPDX-License-Identifier: GPL-3.0-or-later
@@ -294,6 +294,8 @@ native_advance_seg_on_wrap_ds:
 
 
 native_read_chunk64:
+    pushf
+    cld
     push ax
     push bx
     push cx
@@ -322,10 +324,13 @@ native_read_chunk64:
     pop cx
     pop bx
     pop ax
+    popf
     ret
 
 
 native_write_chunk64:
+    pushf
+    cld
     push ax
     push bx
     push cx
@@ -354,6 +359,7 @@ native_write_chunk64:
     pop cx
     pop bx
     pop ax
+    popf
     ret
 
 
