@@ -4,13 +4,13 @@
 
 Version 0.5.0 keeps the established DOS mass-storage path and extends the input side substantially: it adds the BIOS/PS/2 mouse bridge, software keyboard typematic, a Windows-aware HID mouse hotplug state machine, and the independently written Win16 companion `CH375MOU.DRV`.
 
-Prebuilt 0.5.0 binaries (`CH375USB.SYS` and `CH375MOU.DRV`) are published alongside the source. The supplied build scripts can also rebuild them from source.
+Prebuilt 0.5.0 binaries are published in [`binary/`](binary/): `CH375USB.SYS` and `CH375MOU.DRV`. The supplied build scripts can also rebuild them from source.
 
 Author: **Davide "gat"**  
 GitHub: **https://github.com/davidegat**  
 License: **GNU GPL v3 or later (`GPL-3.0-or-later`)**
 
-CH375USB is an independent, unofficial project. It is not affiliated with or endorsed by Nanjing Qinheng Microelectronics Co., Ltd. (WCH). See [`NOTICE.md`](NOTICE.md).
+CH375USB is an independent, unofficial project. It is not affiliated with or endorsed by Nanjing Qinheng Microelectronics Co., Ltd. (WCH). See [`documentation/NOTICE.md`](documentation/NOTICE.md).
 
 ## Table of contents
 
@@ -160,8 +160,13 @@ https://www.vogons.org/viewtopic.php?start=100&t=99751
 
 ## Files
 
-- `CH375USB.SYS` — prebuilt 0.5.0 unified DOS/Windows-aware driver.
-- `CH375MOU.DRV` — prebuilt 0.5.0 Win16 mouse-driver bridge.
+### Prebuilt binaries
+
+- [`binary/CH375USB.SYS`](binary/CH375USB.SYS) — prebuilt 0.5.0 unified DOS/Windows-aware driver.
+- [`binary/CH375MOU.DRV`](binary/CH375MOU.DRV) — prebuilt 0.5.0 Win16 mouse-driver bridge.
+
+### Source and build files
+
 - `CH375USB.ASM` — unified resident driver source and DOS block-device interface.
 - `CH375MOU.ASM` — independently written Win16 mouse-driver bridge source.
 - `CH375MOU.LNK` — Open Watcom linker definition for the Win16 driver.
@@ -178,16 +183,16 @@ https://www.vogons.org/viewtopic.php?start=100&t=99751
 - `BUILD.BAT` — builds the unified `CH375USB.SYS` with NASM.
 - `build.sh` — builds `CH375USB.SYS` and `CH375MOU.DRV` on Linux/Unix and validates the Win16 NE image.
 - `CHANGELOG.md` — release history.
-- `KNOWN_ISSUES.md` — current open issues, hardware caveats and deferred work.
-- `KNOWLEDGE.md` — engineering notes and architecture.
-- `NOTICE.md` — project independence, provenance and external references.
+- [`documentation/KNOWN_ISSUES.md`](documentation/KNOWN_ISSUES.md) — current open issues, hardware caveats and deferred work.
+- [`documentation/KNOWLEDGE.md`](documentation/KNOWLEDGE.md) — engineering notes and architecture.
+- [`documentation/NOTICE.md`](documentation/NOTICE.md) — project independence, provenance and external references.
 - `LICENSE` — GNU GPL v3 license text.
 
-The published `CH375USB.SYS` and `CH375MOU.DRV` are project build outputs from this source tree. The repository does not contain the vendor `CH375DOS.SYS` or FreddyV's `CH375286.SYS` binary.
+The published binaries are project build outputs from this source tree. The repository does not contain the vendor `CH375DOS.SYS` or FreddyV's `CH375286.SYS` binary.
 
 ## Basic DOS installation
 
-Copy `CH375USB.SYS` to the DOS boot drive and add it to `CONFIG.SYS`:
+Copy `binary/CH375USB.SYS` from the repository to the DOS boot drive as `CH375USB.SYS` and add it to `CONFIG.SYS`:
 
 ```dos
 DEVICE=C:\CH375USB.SYS
@@ -279,7 +284,7 @@ With this setup:
 
 ## Windows 95 mouse companion
 
-On Linux/Unix, `build.sh` also builds `CH375MOU.DRV`.
+Use the prebuilt [`binary/CH375MOU.DRV`](binary/CH375MOU.DRV), or build `CH375MOU.DRV` locally with `build.sh`.
 
 Typical setup:
 
@@ -319,11 +324,13 @@ Run:
 ./build.sh
 ```
 
-The script builds:
+The script builds into the working-tree root:
 
 - `CH375USB.SYS` with NASM;
 - `CH375MOU.DRV` with Open Watcom WASM/WLINK;
 - `CH375MOU.MAP` as a linker map.
+
+The repository's published prebuilt copies live in `binary/`; local builds are intentionally produced in the project root by the current build script.
 
 Open Watcom is downloaded into the project-local `.toolchains/` directory when required. The build checks that `CH375MOU.DRV` is actually a Win16 NE DLL/driver before reporting success.
 
@@ -333,7 +340,7 @@ Open Watcom is downloaded into the project-local `.toolchains/` directory when r
 BUILD.BAT
 ```
 
-`BUILD.BAT` builds only the unified `CH375USB.SYS`.
+`BUILD.BAT` builds only the unified `CH375USB.SYS` into the current directory.
 
 Equivalent SYS command:
 
@@ -428,9 +435,9 @@ CH375USB 0.5.0 has not been validated as a Windows 3.x input solution. No Window
 ## Project documentation
 
 - [`CHANGELOG.md`](CHANGELOG.md) — complete release history and fixes.
-- [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md) — current open issues, hardware caveats and intentionally deferred work.
-- [`KNOWLEDGE.md`](KNOWLEDGE.md) — architecture, debugging rules and engineering notes.
-- [`NOTICE.md`](NOTICE.md) — project independence and source/reference provenance.
+- [`documentation/KNOWN_ISSUES.md`](documentation/KNOWN_ISSUES.md) — current open issues, hardware caveats and intentionally deferred work.
+- [`documentation/KNOWLEDGE.md`](documentation/KNOWLEDGE.md) — architecture, debugging rules and engineering notes.
+- [`documentation/NOTICE.md`](documentation/NOTICE.md) — project independence and source/reference provenance.
 
 ## License and source provenance
 
@@ -440,4 +447,4 @@ The source code in this project is independently written. No proprietary WCH dri
 
 Public hardware/protocol specifications, documented DOS/BIOS/Windows interfaces, historical implementations and community reports were used as interoperability and engineering references.
 
-See [`NOTICE.md`](NOTICE.md) for the detailed provenance/reference record.
+See [`documentation/NOTICE.md`](documentation/NOTICE.md) for the detailed provenance/reference record.
