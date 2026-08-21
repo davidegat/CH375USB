@@ -3,28 +3,26 @@
 **Project:** CH375USB  
 **Target:** Pocket386 and similar 386-class DOS PCs with a CH375 ISA USB controller  
 **Author:** Davide "gat" — https://github.com/davidegat  
-**Current reference version:** 0.4.12
+**Current reference version:** 0.4.13
 
-This document is not a user manual and not a formal CH375 specification. It is a record of practical knowledge collected while developing and testing CH375USB on real hardware.
+This is the project's practical engineering record, not a formal CH375 specification. It documents what has actually worked on real hardware, why the current architecture exists, mistakes found during development, and changes that should not be made casually.
 
-Its purpose is to save other retro-computing hobbyists from repeating the same experiments, wrong assumptions, timing traps and compatibility mistakes.
-
-Some observations are specific to the Pocket386 implementation and its CH375 ISA interface. Treat empirical findings as exactly that: useful evidence from a working machine, not universal guarantees for every CH375 board.
+Some observations are Pocket386-specific. Treat real-hardware results as evidence, not as a guarantee for every CH375 board or clone.
 
 ---
 
-## 1. Hardware baseline
+# Hardware and architecture
 
-The tested machine is a Pocket386 / 386-class PC with a CH375 USB controller exposed through ISA-style parallel I/O.
+## CH375 ISA interface
 
-The mapping used by this machine is:
+The tested Pocket386 exposes the CH375 through ISA-style parallel I/O:
 
 ```text
 0260h  CH375 data port
 0261h  CH375 command/status port
 ```
 
-The driver is therefore built around:
+The driver uses:
 
 ```text
 IO_BASE   = 0260h
@@ -32,1288 +30,337 @@ DATA_PORT = 0260h
 CMD_PORT  = 0261h
 ```
 
-The controller is detected with the CH375 `CHECK_EXIST` command before the resident USB logic is enabled.
+The controller is probed with `CHECK_EXIST` before the resident USB logic is enabled. Do not assume that every CH375 board uses this mapping.
 
-### Important lesson
+Never load CH375USB together with the vendor `CH375286.SYS`; both require exclusive access to the same controller.
 
-Do not assume every CH375 board uses the same port mapping. Verify the hardware first. A perfectly correct USB stack aimed at the wrong I/O ports looks exactly like a completely dead controller.
+## Polling is part of the design
 
----
+The tested hardware does not provide a useful CH375 IRQ path that CH375USB can simply depend on. Polling is therefore intentional and split across several contexts:
 
-## 2. Do not load two CH375 drivers at once
+- `INT 1Ch`: lightweight root-event and HID polling;
+- `INT 28h`: deferred hotplug, enumeration, hub and storage maintenance;
+- `INT 33h`: additional on-demand mouse polling for responsive DOS applications.
 
-The original `CH375286.SYS` and CH375USB both expect exclusive control of the same controller.
+Heavy USB work must not be moved into the timer ISR or into routine DOS block-device requests. Enumeration, resets and topology changes belong in deferred maintenance.
 
-Never load both:
-
-```dos
-DEVICE=C:\CH375286.SYS ...
-DEVICE=C:\CH375USB.SYS
-```
-
-This is not a useful compatibility test. It is two drivers racing for the same device.
-
-When testing CH375USB, remove the vendor driver from that boot profile.
+The driver reserves one DOS block-device unit even when no USB storage is attached. No media means drive-not-ready; when storage appears, the same DOS drive becomes usable. This is a deliberate part of DOS hotplug support.
 
 ---
 
-## 3. The first architecture was deliberately small
+# Storage
 
-The earliest experimental CH375USB version was intentionally limited:
+## Keep the native CH375 path and the generic BOT path
 
-- resident DOS driver;
-- polling instead of relying on an ISA IRQ;
-- root-device support;
-- read-only mass storage first;
-- FAT12/FAT16-oriented DOS use;
-- boot-protocol HID keyboard and mouse;
-- no hub;
-- no multiple-device ambition at the beginning.
-
-That was the right development strategy.
-
-Trying to solve storage, HID, hubs, hotplug, Windows compatibility and every filesystem case at the same time would have made debugging impossible.
-
-### Lesson
-
-On old hardware, build one known-good path at a time:
-
-1. prove that commands reach the controller;
-2. prove USB connection detection;
-3. prove enumeration;
-4. prove one transfer type;
-5. only then add resident DOS integration;
-6. only after that add hotplug and multiple classes.
-
-A tiny driver that reliably reads one sector is more valuable during development than a giant half-working USB stack.
-
----
-
-## 4. Polling was not just a lazy substitute for interrupts
-
-The Pocket386 CH375 setup we worked with did not provide a useful controller IRQ path that CH375USB could simply depend on.
-
-Polling therefore became a design constraint.
-
-This has consequences:
-
-- long waits inside an interrupt handler are dangerous;
-- HID endpoints normally NAK when idle;
-- re-enumeration cannot safely happen in every context;
-- DOS applications call mouse services at very different rates;
-- storage and HID must cooperate without blocking each other for long periods.
-
-The final design uses several different polling contexts rather than one giant polling loop.
-
-### Timer (`INT 1Ch`)
-
-Used for lightweight periodic work:
-
-- inspect root connect/disconnect state;
-- poll active HID endpoints;
-- maintain retry/backoff counters;
-- mark heavier maintenance as pending.
-
-The timer handler must stay short.
-
-### DOS idle (`INT 28h`)
-
-Used for deferred work that should not be done inside the timer ISR:
-
-- hotplug maintenance;
-- re-enumeration;
-- hub scanning;
-- storage readiness checks.
-
-### Mouse API calls (`INT 33h`)
-
-Used for extra on-demand mouse polling because applications such as DOS EDIT query the mouse much more frequently than the BIOS timer rate.
-
-### General lesson
-
-Polling is not one mechanism. On DOS, *where* you poll is as important as *how often* you poll.
-
----
-
-## 5. Never perform heavy USB enumeration from DOS block-device requests
-
-One of the important stability rules that emerged was:
-
-> A DOS block-device request must not unexpectedly trigger full USB enumeration.
-
-If DOS asks whether removable media is present, the driver should answer based on current state.
-
-It should not suddenly:
-
-- reset USB;
-- enumerate a device;
-- wait seconds for controller responses;
-- probe hubs;
-- rebuild the topology.
-
-Those operations belong in deferred maintenance.
-
-The final driver therefore keeps a reserved removable drive and returns a quick "drive not ready" state when no media is available.
-
-### Why this matters
-
-DOS may issue filesystem or media checks at inconvenient times. Turning a routine media check into a hardware discovery operation can produce stalls, reentrancy problems and very confusing behaviour.
-
----
-
-## 6. Reserving the DOS drive letter simplifies hotplug
-
-CH375USB reserves one DOS removable block-device unit even when no USB storage is attached.
-
-When no media exists, requests return drive-not-ready.
-
-When storage later appears, the same DOS device becomes usable.
-
-This is much cleaner than trying to dynamically create and destroy DOS block devices every time a flash drive is connected.
-
-### Practical consequence
-
-The drive letter exists before the stick does.
-
-That may look slightly unusual to a user, but it makes DOS hotplug practical.
-
----
-
-## 7. CH375 native storage is extremely useful
-
-For a root USB flash drive, the CH375's native disk commands turned out to be a valuable path:
+For root mass storage the driver first tries the CH375 native `DISK_*` firmware path:
 
 ```text
 DISK_INIT
 DISK_SIZE
 DISK_READY
-DISK_READ
-DISK_RD_GO
-DISK_WRITE
-DISK_WR_GO
-DISK_SENSE
+DISK_READ / DISK_RD_GO
+DISK_WRITE / DISK_WR_GO
+DISK_R_SENSE
 ```
 
-The current architecture tries native root mass storage before falling back to generic USB enumeration.
+If native storage is not appropriate or fails, generic USB enumeration can expose USB Mass Storage through BOT/SCSI.
 
-This is deliberate.
-
-The CH375 can perform a substantial amount of the mass-storage transaction itself. On a 386, using that facility avoids implementing every operation through generic USB BOT when it is not necessary.
-
-### Current strategy
-
-For a root device:
-
-```text
-CH375 native storage
-        |
-        +-- success -> STORAGE_NATIVE
-        |
-        +-- failure -> generic USB enumeration
-                         |
-                         +-- HID
-                         +-- hub
-                         +-- USB MSC BOT/SCSI
-```
-
-The generic BOT/SCSI implementation is still valuable, especially for devices reached through a hub or where native handling is not appropriate.
-
----
-
-## 8. Generic USB Mass Storage still matters
-
-The fallback path implements the standard USB Mass Storage Bulk-Only Transport model with SCSI commands including:
+The generic path implements at least:
 
 ```text
 TEST UNIT READY
 READ CAPACITY(10)
 READ(10)
 WRITE(10)
-SYNCHRONIZE CACHE
+SYNCHRONIZE CACHE(10)
 ```
 
-Important BOT lessons:
+BOT must maintain endpoint toggles, validate CSW signature/tag/status, and perform reset recovery/endpoint halt clearing when required. A generic implementation is useful, but it is not a reason to delete a native path already proven on the target hardware.
 
-- maintain IN and OUT data toggles;
-- validate the CSW signature;
-- validate the CSW tag against the CBW tag;
-- perform bulk-only reset recovery when a transaction fails;
-- clear endpoint halts during recovery;
-- reset endpoint toggles after recovery.
+## Storage media can mimic driver bugs
 
-Ignoring recovery works until the first error. Then the device often appears permanently dead even though the USB connection itself is fine.
+When debugging CH375 storage, try more than one flash drive before changing timing or protocol code. Older/simple USB 2.0-era drives are useful references. Test cold boot, insertion after boot, unplug/replug, reads and writes separately.
 
----
+The currently recommended DOS storage layout is an MBR partition table with one primary FAT16 partition no larger than 2 GiB. The native path currently accepts 512-byte physical sectors.
 
-## 9. Storage media can fool you into debugging the wrong subsystem
+## Non-512-byte sectors
 
-A major practical lesson from testing was that a USB flash drive itself can be the problem.
+Starting with 0.4.12, native `DISK_SIZE` data is read and parsed rather than assuming a 512-byte sector. Non-512-byte media is rejected safely.
 
-At one stage controller timing and driver delay settings looked guilty, but changing the flash drive changed the behaviour. An older small-capacity drive was useful for comparison.
+This is validation, not translation. Supporting 1024/2048/4096-byte media would require a DOS 512-byte logical-sector translation layer; writes may require read-modify-write and caching. Do not implement this without a real device that needs it.
 
-### Rule for retro USB debugging
+## Multi-LUN
 
-Before rewriting low-level timing code:
-
-- test at least two different flash drives;
-- preferably include an older, smaller USB 2.0-era device;
-- cold boot with the device inserted;
-- test insert after boot;
-- test unplug/replug;
-- test both reads and writes.
-
-A marginal or unusual flash controller can make a working host implementation look broken.
-
-Do not overfit the driver to one USB stick.
+Multi-LUN remains deferred. A useful first implementation would query the maximum LUN and select the first ready LUN while still exposing one DOS drive. Multiple simultaneous DOS drive letters would be a larger architectural change.
 
 ---
 
-## 10. Bounded waits are mandatory
+# CH375 control and timing lessons
 
-A controller wait that can run forever is unacceptable in a resident DOS driver.
+## Bound hardware waits
 
-The driver uses bounded waits for different contexts:
+A resident DOS driver must not wait forever. Control transfers, native disk operations, ordinary USB transactions, connect detection and HID polling need bounded waits appropriate to their context.
 
-- control transfers;
-- normal transfers;
-- native disk operations;
-- connect detection;
-- HID polling.
+An idle HID endpoint normally returns NAK; that is not exceptional. Connection/disconnection events may also appear while waiting for the completion of another operation and must not automatically be mistaken for that operation's final status.
 
-The timeouts are intentionally context-specific.
+## Always release USB reset
 
-A control transfer may need to tolerate connection-status events while waiting for its real completion status. An HID poll, on the other hand, must return quickly because a NAK from an idle mouse or keyboard is completely normal.
-
-Datasheet II adds an important controller-specific reason to make retry policy explicit: after chip reset or USB-mode reset, `SET_RETRY` defaults to `85h`, which means effectively infinite retry on NAK plus five retries after device timeout. Starting with 0.4.12, generic USB enumeration/polling explicitly selects bounded retry behaviour instead of accidentally inheriting that reset default.
-
-### Important observation
-
-A CH375 status event is not automatically the final answer to the operation you care about.
-
-Connection and disconnection events may need to be consumed/recorded while the code continues waiting for the transfer status.
-
----
-
-## 11. USB reset must always be released
-
-For this CH375 host mode sequence, mode `7` asserts a USB bus reset and mode `6` returns the controller to normal host operation. WCH Datasheet (I), Version 4 also documents mode `5` as host mode without SOF generation.
-
-Starting with 0.4.12, generic root enumeration follows the documented sequence more explicitly:
+The documented root reset sequence used by the 0.4.12+ generic path is:
 
 ```text
 mode 5 -> host enabled, no SOF
 mode 7 -> assert USB reset
-mode 6 -> release reset / normal host operation with SOF
+mode 6 -> release reset and resume normal host operation/SOF
 ```
 
-Even error paths must return the controller to mode 6.
+Every failure path that reaches reset must still return the controller to mode 6.
 
-Leaving the controller in reset creates a wonderfully convincing imitation of dead hardware.
+## Full-speed and low-speed devices
 
----
+0.4.12 added the documented `GET_DEV_RATE` / `SET_USB_SPEED` handling while retaining the older CH375B-compatible low-speed sequence as a fallback. `SET_USB_MODE` restores full-speed operation, so a detected low-speed setting must be reapplied after the final mode switch.
 
-## 12. Full-speed and low-speed enumeration may require different treatment
+Do not remove a proven compatibility fallback merely because a cleaner documented path exists; WCH itself notes that some commands are not supported by every CH375 revision.
 
-Generic root enumeration must not assume every HID device runs at the same bus speed. WCH Datasheet (II), Version 4 documents `GET_DEV_RATE` in mode 5: bit 4 identifies a 1.5 Mbps low-speed device, otherwise the device is 12 Mbps full-speed.
+Low-speed devices behind an external hub remain experimental and are not presently claimed as supported.
 
-Starting with 0.4.12, the documented speed-detection path is tried first. For a low-speed device, `SET_USB_SPEED 02h` is re-applied after the final `SET_USB_MODE`, because the datasheet explicitly says `SET_USB_MODE` restores full-speed operation.
+## `SET_RETRY` is controller state
 
-The older CH375B low-speed setup sequence remains in the source as a compatibility fallback rather than being discarded. This matters because the datasheet also warns that `SET_USB_SPEED` is not supported on every CH375 model/revision.
+WCH Datasheet II documents reset default `85h`, which can retry NAK indefinitely inside the CH375. Generic USB paths therefore explicitly set retry behaviour instead of accidentally inheriting the reset default.
 
-### Lesson
+The current `05h` bounded enumeration policy was already present in the 0.4.11 baseline. 0.4.12 centralized and named it; it did not introduce the policy. A separate finite-NACK-retry policy for built-in enumeration remains worth testing, but it is not a proven 0.4.12 regression.
 
-Do not assume that "USB 1.x" means every device can be enumerated with exactly the same host-state sequence, and do not delete a proven hardware fallback merely because a cleaner documented path exists.
+## Command-port bit 7 / `INT#`
 
-A keyboard or mouse may be low-speed while a flash drive is full-speed.
+On CH375B/C in parallel mode, command-port bit 7 mirrors the interrupt request. The 0.4.12 control fallback checks for an actual pending event before consuming `GET_STATUS`. This avoids reading status blindly when no completion is pending.
 
----
+## `DISK_R_SENSE` must be completed and drained
 
-# HID KEYBOARD
+`DISK_R_SENSE` is not fire-and-forget. Its completion status and returned sense data must be consumed before another native disk command, otherwise stale state can be mistaken for the following operation.
 
-## 13. Boot-protocol HID is the correct first target for DOS
+## Conservative delays remain intentional
 
-For keyboards, supporting HID boot protocol is much more realistic than trying to implement arbitrary HID report descriptors immediately.
-
-After enumeration, CH375USB sets:
-
-- boot protocol;
-- idle rate;
-- interrupt IN polling.
-
-A boot keyboard report gives modifiers plus six key usages.
-
-That is enough for conventional DOS keyboard operation.
+The current CPU-loop delays are longer than the datasheet minima and are CPU dependent. There is a plausible future performance project involving refresh-bit calibration and reduction of `ch_delay`/`ch_cmd_delay`, but timing changes should be measured on the Pocket386 before replacing proven values.
 
 ---
 
-## 14. USB HID usages are not PC/AT scan codes
+# HID keyboard
 
-USB keyboards speak HID usage codes.
+CH375USB targets boot-protocol keyboards rather than arbitrary HID report descriptors. It sets boot protocol/idle state, polls the interrupt endpoint, translates USB usages into PC Set-1 scan codes and injects them into the conventional keyboard-controller path.
 
-DOS software expects the PC keyboard world.
+Important rules:
 
-CH375USB therefore translates HID usages into Set 1 scan codes and injects those bytes into the PC keyboard path.
+- USB usages are not PC scan codes;
+- make and break transitions both matter;
+- extended keys need `E0h` where appropriate;
+- modifier transitions must be tracked separately;
+- injecting through the interface DOS software already understands is preferable to inventing a parallel keyboard API.
 
-Extended keys require the `E0h` prefix.
-
-Modifier handling has to include make and break transitions independently from the six ordinary keys in the boot report.
-
-### Lesson
-
-"Keyboard packet received" is only half the job.
-
-A DOS keyboard bridge must correctly reproduce:
-
-- make;
-- break;
-- modifiers;
-- extended prefixes;
-- key state transitions.
-
-If releases are lost, DOS thinks keys are still held.
+Potential future improvements include typematic/repeat, faster/on-demand keyboard polling, a more complete non-US/numpad map and LED `SET_REPORT` support. These are usability/compatibility extensions rather than regressions in the current basic keyboard support.
 
 ---
 
-## 15. Injecting keyboard bytes through the 8042-compatible path worked
+# HID mouse
 
-The implementation uses the keyboard-controller command that writes an output-buffer byte and then supplies the scan code.
+Receiving a boot mouse report is straightforward; fitting it into arbitrary DOS applications is not.
 
-Conceptually:
+CH375USB bridges USB mouse state through a conventional DOS mouse driver such as CuteMouse rather than replacing the entire DOS mouse ecosystem. `CTMOUSE`/`MOUSE.COM` normally loads from `AUTOEXEC.BAT`, after CH375USB has already loaded from `CONFIG.SYS`, so CH375USB must discover and hook the final `INT 33h` chain later.
+
+The mouse path combines timer polling with on-demand polling from relevant `INT 33h` calls. Timer-only polling at approximately 18.2 Hz was visibly too slow in DOS EDIT.
+
+Button presses and releases are edges, not just a current bitmap. Short clicks can occur between application polls; therefore press/release transitions are latched and counted. A small bounded burst of HID reports helps drain queued motion/button events without turning the timer ISR into an unbounded loop.
+
+Direct PS/2/IRQ12 emulation was intentionally avoided. The DOS `INT 33h` layer is a safer compatibility boundary for the current design.
+
+---
+
+# Hotplug
+
+Hotplug is a state machine, not a single present/absent boolean. Relevant state includes root link state, root event, maintenance flag, retry/backoff, storage slot/mode, media-ready and media-changed state.
+
+Fast detach and slow discovery are deliberately separated:
 
 ```text
-wait until controller input buffer is empty
-send 8042 command D2h
-wait again
-write scan byte to port 60h
+fast path:
+    invalidate device state
+    mark storage unavailable/media changed
+    schedule maintenance
+
+deferred path:
+    reset/classify
+    try native storage
+    otherwise generic enumeration
+    scan hub if applicable
+    initialize/claim device classes
 ```
 
-This lets USB keyboard events enter the conventional PC keyboard path and be seen by DOS software.
+Retry/backoff prevents enumeration storms while a physical device is settling.
 
-### Lesson
-
-For DOS compatibility, emulating the interface software already understands is often more useful than inventing a parallel API.
+All three currently supported root-device classes — storage, boot keyboard and boot mouse — have been tested successfully with live attach/detach on the target DOS hardware.
 
 ---
 
-# HID MOUSE
+# Windows 95 boundary
 
-## 16. Mouse support was much harder than keyboard support
+DOS HID support is not Windows 95 protected-mode HID support. The DOS keyboard/mouse bridge should get out of the way when Windows enhanced mode takes over.
 
-Receiving a three-byte boot mouse report is easy:
+CH375USB uses the Windows enhanced-mode notifications on `INT 2Fh` (`AX=1605h` entry and `AX=1606h` exit) to suspend DOS HID state, clear stale mouse callbacks and remove/rebuild its `INT 33h` shim safely.
+
+A stale DOS mouse callback once caused a valuable failure mode: using the mouse in DOS before entering Windows could leave a callback into dead application memory and destabilize Windows startup. Resident software must never assume application callback addresses remain valid forever.
+
+For storage, the tested Windows 95 workaround is to leave CH375USB out of the Windows `CONFIG.SYS` profile, load it with `DEVLOAD.COM` from `AUTOEXEC.BAT` immediately before `WIN`, and ensure the USB drive has already been detected in DOS. This is not native Windows USB hotplug.
+
+USB keyboard and mouse are currently DOS-only. Proper Windows GUI input would require a separate protected-mode companion/VxD-style component.
+
+---
+
+# BIOS and real-hardware testing
+
+The Pocket386 used during development has also been tested with aggressive performance-oriented BIOS settings such as PCLK2/8, disabled I/O recovery and slow refresh 120 µs. These are test conditions, not driver requirements. Debug with default/conservative BIOS settings first.
+
+A practical hardware lesson: the Pocket386 BIOS mouse-support option has been observed to become disabled unexpectedly. If storage and keyboard work but a previously working mouse suddenly does not, verify the BIOS mouse setting before changing the driver.
+
+Test cold boot and hotplug separately. For storage, explicitly test create/copy/read/delete and verify data after remount/reboot. For mouse, test actual DOS applications, short clicks, movement while clicking, and DOS-to-Windows transition after active mouse use.
+
+---
+
+# 0.4.12 datasheet audit
+
+0.4.12 was a conservative audit of the known-good 0.4.11 code against WCH CH375 Datasheet (I) Version 4 and Datasheet (II) Version 4. Durable changes/lessons from that audit were:
+
+- documented mode 5 -> 7 -> 6 root-reset sequence;
+- `GET_DEV_RATE` / `SET_USB_SPEED` handling with the legacy low-speed fallback retained;
+- explicit generic `SET_RETRY` state instead of relying on reset default `85h`;
+- command-port bit 7 checked before fallback `GET_STATUS` consumption;
+- native `DISK_SIZE` result consumed and 512-byte sector size validated;
+- native `DISK_R_SENSE` completion/data drained correctly;
+- failed zero-data control OUT clears `usb_control_wait`;
+- named Datasheet-II constants added for the audited commands/status values.
+
+`RD_USB_DATA0`, Multi-LUN, non-512 translation, low-speed-behind-hub support and timing optimization were deliberately left out of that audit rather than mixed into a low-level correctness pass.
+
+Real-hardware 0.4.12 regression testing kept storage, keyboard, mouse and live root replacement working. An apparent mouse regression was traced to the BIOS mouse setting, not to the driver.
+
+---
+
+# 0.4.13 correctness pass
+
+0.4.13 promotes the tested 0.4.12 experimental line after a second review focused on DOS block-driver semantics and resident-code correctness. Only findings strong enough to justify another hardware regression test were included.
+
+## Media Check values must be translated explicitly
+
+`media_changed` is an internal boolean, but DOS command 1 uses different result values:
 
 ```text
-buttons
-delta X
-delta Y
+FFh = media changed
+00h = unknown
+01h = media not changed
 ```
 
-Making that behave like a real DOS mouse in arbitrary programs is not.
+Earlier code copied `0/1` directly, meaning the precise moment the driver knew media had changed could be reported to DOS as `01h` — the opposite meaning.
 
-The difficult part is not USB. The difficult part is the DOS mouse API and the lifetime of the existing mouse driver.
+0.4.13 returns `FFh` once when a change is pending and `01h` in steady state. The fix was first tested successfully in `0.4.12-exp1a`.
 
----
+**Lesson:** never reuse an internal boolean encoding as a DOS protocol field without checking the protocol's actual values.
 
-## 17. CTMOUSE/MOUSE.COM is loaded after CONFIG.SYS
+## Manual control-IN must use the real EP0 packet size
 
-CH375USB is normally a `DEVICE=` driver loaded from `CONFIG.SYS`.
+The device descriptor's `bMaxPacketSize0` is stored as `D_EP0`, but the old manual control-IN loop considered any packet shorter than 64 bytes to be a short packet. That breaks devices whose EP0 maximum packet is 8, 16 or 32 bytes.
 
-A conventional DOS mouse driver such as CuteMouse is normally loaded later from `AUTOEXEC.BAT`.
+0.4.13 compares the returned packet length against `D_EP0`, with 8 bytes as a safe pre-descriptor/default value. This was also first verified successfully in `0.4.12-exp1a`.
 
-Therefore CH375USB cannot simply capture `INT 33h` once during its own initialization and assume that vector is the final DOS mouse driver.
+This fix improves manual enumeration but does not by itself solve the explicitly separate low-speed-behind-hub limitation.
 
-At CH375USB initialization time, CTMOUSE may not exist yet.
+## Resident string operations must establish their own Direction Flag
 
-### Solution
+`ch_write_packet`, `ch_read_packet`, `native_read_chunk64` and `native_write_chunk64` use `LODSB`/`STOSB`. Resident code may run while a foreground DOS application owns CPU flags, so assuming DF=0 is unsafe.
 
-Record the boot-time `INT 33h` vector.
+0.4.13 wraps these routines with saved FLAGS, `CLD`, and FLAGS restoration. Copies therefore run forward while preserving the caller's original DF state.
 
-Later, during DOS idle processing, inspect the vector again.
+**Lesson:** ISR/TSR code that uses x86 string instructions must establish its own DF contract.
 
-When it changes because CTMOUSE/MOUSE.COM has installed itself, chain CH375USB's `INT 33h` shim in front of that real mouse driver.
+## Partial block errors must report the completed sector count
 
-### General DOS lesson
+For DOS block reads/writes, error status is not the whole result. Request-header word `+18` must reflect how many sectors actually completed.
 
-Resident software loaded in `CONFIG.SYS` must remember that many TSR services do not exist yet.
+Earlier code returned an error while leaving the original requested count unchanged. 0.4.13 computes `requested - remaining`; at the failure point CX still includes the sector that failed, so this is the number completed successfully before the failing sector.
 
-Initialization order is architecture.
+Targeted fault injection of this path has not yet been performed, so that distinction remains documented in `KNOWN_ISSUES.md` even though the logic is corrected.
 
----
+## Every successful enumeration path must finish class initialization
 
-## 18. Do not replace the conventional mouse driver if you can bridge it
+The CH375 built-in generic root path could parse a mass-storage interface and set `CAP_MSC` but finish without running `msc_init_slot`. Native `DISK_*` usually masked this for root flash drives, and the manual generic path already initialized MSC correctly.
 
-The successful design lets the existing DOS mouse driver retain responsibility for conventional cursor behaviour.
+0.4.13 now runs the existing BOT/SCSI initialization when the built-in path recognizes MSC. Capability discovery and class initialization must have equivalent completion semantics across parallel enumeration paths.
 
-CH375USB supplies USB-derived:
+Forced generic BOT fallback has not yet received the same direct coverage as the normal native root-storage path.
 
-- position;
-- buttons;
-- motion counters ("mickeys");
-- press/release counters;
-- callbacks.
+## 0.4.13 hardware result
 
-The existing driver remains part of the chain.
+After all five correctness fixes were combined, the promoted code was tested on the target DOS machine:
 
-This is much more compatible than trying to impersonate every mouse-driver behaviour from scratch.
+- USB mass storage works read/write;
+- USB keyboard works;
+- USB mouse works;
+- storage, keyboard and mouse all work with live plug/unplug and plug-and-play under DOS.
 
----
-
-## 19. BIOS timer polling alone is too slow for a responsive DOS mouse
-
-The BIOS timer rate is about 18.2 Hz.
-
-That is fine for maintenance.
-
-It feels terrible as the sole sampling path for a mouse.
-
-DOS EDIT made this obvious: once polling was added directly from the `INT 33h` calls used by applications, mouse movement became dramatically more responsive.
-
-### Final pattern
-
-Mouse reports can be obtained from:
-
-- periodic timer polling;
-- on-demand polling when an application calls relevant `INT 33h` services.
-
-### Lesson
-
-Match polling frequency to the consumer.
-
-A GUI-like DOS application may query mouse state hundreds of times between BIOS ticks.
+This is the current known-good reference.
 
 ---
 
-## 20. Movement working does not mean the mouse implementation is finished
+# Confirmed/deferred work after 0.4.13
 
-During development we reached a very revealing state:
+`KNOWN_ISSUES.md` is the authoritative tracker. The most important remaining items are:
 
-> Mouse movement in DOS EDIT was responsive, but mouse buttons still did not work.
+- BOT `SYNCHRONIZE CACHE(10)` failure is not yet propagated back to DOS after an otherwise successful write;
+- `usb_busy` acquisition is a real non-atomic design race and should be redesigned with explicit ownership rather than mechanically patched;
+- no LBA bounds check is performed before storage I/O;
+- when no CH375 is present, the driver still reserves its normal DOS unit/resident memory;
+- DOS does not yet show attach/detach notifications; proposed design is a resident event queue + private `INT 2Fh` API + optional `CH375MON.COM`;
+- full DOS removable-media capability advertisement remains deferred; if implemented, bit 11 (`0800h`) and command 15 must be implemented correctly. Do not use `0840h` unless Generic IOCTL is actually implemented;
+- FAT32 is not implemented; accepting partition type `0Bh/0Ch` alone is insufficient because the DOS-facing BPB path also needs FAT32 fields;
+- Multi-LUN, non-512 translation and low-speed devices behind hubs remain deferred;
+- phase-specific `SET_RETRY`, config-descriptor truncation hardening, timing calibration, neutral delay ports, `RD_USB_DATA0`, 8042 injection hardening, a private ISR stack, hub USB-address recycling, BOT `REQUEST SENSE`, a second `CHECK_EXIST` pattern and dead-code cleanup remain review candidates that require targeted tests.
 
-This was useful because it separated two problems that initially looked like one.
-
-Movement can be represented as accumulated deltas.
-
-Clicks are *edges*.
-
-A short press and release can happen between two application polls.
-
-If the driver only stores the current button state, the application may observe:
-
-```text
-not pressed
-not pressed
-```
-
-and the click has vanished.
-
-### Correct approach
-
-Latch button transitions when HID reports arrive:
-
-- left press;
-- left release;
-- right press;
-- right release;
-- middle press;
-- middle release.
-
-Maintain counters and positions for press/release events.
-
-Do not derive all click behaviour only from the latest button bitmap.
-
-This is a general event-system lesson, not just a DOS mouse lesson.
+Do not turn code-review suggestions into fixes automatically. Separate proven defects from plausible hardening and from feature requests, then test one change set at a time.
 
 ---
 
-## 21. Burst draining helps with button events
+# Current known-good functional summary
 
-When a mouse endpoint has multiple reports queued, reading only one report can leave the system behind.
-
-The mouse poll therefore attempts a small bounded burst of reports.
-
-This improves the chance of consuming both movement and short button transitions without turning the timer ISR into an unbounded loop.
-
-Again, bounded work is important.
-
----
-
-## 22. Direct PS/2 / IRQ12 emulation was intentionally avoided
-
-A tempting design is to make the USB mouse look like hardware arriving through the PS/2 auxiliary device and IRQ12.
-
-That path is much more invasive.
-
-CH375USB retained the DOS `INT 33h` bridge instead of depending on an artificial IRQ12 mouse path.
-
-### Lesson
-
-When extending a retro system, use the highest compatibility layer that is sufficient.
-
-If DOS applications already agree on `INT 33h`, modifying emulated hardware below that level adds risk without necessarily adding compatibility.
-
----
-
-# HOTPLUG
-
-## 23. Hotplug needs a state machine, not just "device present?"
-
-A connect/disconnect event can bounce through several states while USB resets and enumeration happen.
-
-The driver keeps explicit state such as:
-
-- current root-link state;
-- pending root event;
-- maintenance pending;
-- retry/backoff ticks;
-- storage slot;
-- storage mode;
-- media-ready flag;
-- media-changed flag.
-
-This prevents every status sample from immediately launching another full enumeration.
-
-### Lesson
-
-Hotplug is asynchronous state management.
-
-Treating it as a single boolean produces re-enumeration storms.
-
----
-
-## 24. Separate fast detach from slow discovery
-
-Disconnect handling should be immediate enough that DOS stops using stale storage or HID state.
-
-Discovery is slower.
-
-The useful split is:
-
-### Fast path
-
-- mark devices detached;
-- invalidate storage;
-- mark media changed;
-- schedule maintenance.
-
-### Deferred path
-
-- reset controller as needed;
-- classify root device;
-- try native storage;
-- otherwise perform generic enumeration;
-- scan hub ports;
-- claim storage again.
-
-This keeps interrupts short and gives DOS a consistent view of removal.
-
----
-
-## 25. Retry/backoff prevents hotplug thrashing
-
-After connect/disconnect, retry counters intentionally delay repeated attempts.
-
-Without this, a device that is physically settling can cause:
-
-```text
-connect
-enumerate
-fail
-enumerate
-fail
-enumerate
-...
-```
-
-on every timer tick.
-
-Old PCs are slow enough that this can become catastrophic.
-
-A small stateful backoff is far better than heroic retry loops.
-
----
-
-# WINDOWS 95
-
-## 26. DOS support and Windows 95 support are different problems
-
-This was one of the most important conceptual corrections in the project.
-
-A real-mode DOS USB keyboard or mouse implementation does **not** automatically become a Windows 95 USB keyboard or mouse implementation.
-
-Windows 95 enhanced mode uses protected-mode virtual-device infrastructure for these input paths.
-
-For proper Windows GUI input, a separate protected-mode component would be required, conceptually involving the Windows keyboard and virtual-mouse services.
-
-### Current reality
-
-```text
-DOS:
-  USB storage   YES
-  USB keyboard  YES
-  USB mouse     YES
-  hotplug       YES
-
-Windows 95 GUI:
-  USB storage   usable through the documented pre-Windows DOS method
-  USB keyboard  NO
-  USB mouse     NO
-  reliable USB hotplug NO
-```
-
-Trying to "make the DOS mouse keep working inside Windows" is the wrong architectural goal.
-
-The DOS HID bridge should get out of the way when Windows takes over.
-
----
-
-## 27. A stale INT 33h callback can poison the DOS -> Windows transition
-
-This produced one of the most valuable bugs in the project.
-
-The observed symptom was:
-
-- boot DOS;
-- use/move the USB mouse in DOS;
-- start Windows;
-- Windows sometimes fails to start or reaches a blue screen.
-
-If the mouse had not been used first, Windows was much more likely to start normally.
-
-The plausible cause was a DOS application's mouse callback registered through `INT 33h`.
-
-CH375USB retained that callback address after the DOS program had terminated.
-
-That address could then point into memory that no longer contained the original program.
-
-A later mouse event could effectively call dead code.
-
-### General TSR lesson
-
-Never assume a callback pointer registered by an application remains valid after that application is gone.
-
-This is especially dangerous for resident drivers because *the driver outlives the caller*.
-
----
-
-## 28. Windows announces the transition: use it
-
-Introduced in 0.4.11 and retained in 0.4.12, the design handles the documented Windows enhanced-mode notifications through multiplex interrupt `INT 2Fh`:
-
-```text
-AX=1605h  Windows enhanced-mode initialization
-AX=1606h  Windows enhanced-mode exit
-```
-
-On Windows entry CH375USB:
-
-- marks Windows active;
-- clears pending mouse state;
-- clears user mouse callback state;
-- removes its `INT 33h` shim if it is currently at the top of the chain;
-- stops the DOS HID bridge from operating while Windows owns input.
-
-On return from Windows it resets the relevant DOS-side state so the bridge can be established again safely.
-
-### Lesson
-
-OS transition notifications exist for a reason.
-
-A DOS TSR that hooks global interrupts must explicitly define what happens when Windows enhanced mode starts.
-
----
-
-## 29. INT 33h reset must reset callback state too
-
-Mouse reset is not just cursor position and button state.
-
-The registered user callback is part of the mouse driver's runtime state.
-
-Leaving a previous callback alive across reset is an invitation to call stale application memory.
-
-The reset path therefore clears callback mask, offset and segment.
-
----
-
-## 30. Loading the storage driver from CONFIG.SYS can slow Windows 95
-
-A real-mode block driver loaded conventionally in `CONFIG.SYS` stays resident as Windows starts.
-
-On the Pocket386, that can noticeably affect Windows startup/performance.
-
-A useful workaround was discovered using FreeDOS `DEVLOAD.COM`.
-
-### Windows boot profile
-
-Do not load CH375USB in the Windows `CONFIG.SYS` section.
-
-Instead, immediately before `WIN`:
-
-```dos
-C:\DEVLOAD\DEVLOAD.COM C:\CH375USB.SYS
-WIN
-```
-
-This allows the USB storage drive already discovered in DOS to remain usable when Windows starts, without loading CH375USB at the earliest CONFIG.SYS stage of that boot profile.
-
-### Important limitation
-
-This is not native Windows USB hotplug.
-
-Treat it as:
-
-> detect the storage device in DOS first, then carry that DOS block-device access into Windows.
-
-The flash drive should already be inserted and visible before `WIN`.
-
-Do not advertise arbitrary plug/unplug after the Windows GUI is running as supported behaviour.
-
----
-
-# BIOS AND ISA TIMING
-
-## 31. The development machine is not using conservative BIOS timings
-
-The final documented test machine uses performance-oriented Pocket386 BIOS settings:
-
-```text
-AT Bus Clock:          PCLK2/8
-I/O Recovery:          Disabled
-I/O Recovery Period:   0.75 µs
-16Bit ISA Insert Wait: Disabled
-Slow Refresh:          120 µs
-```
-
-These are *test conditions*, not CH375USB requirements.
-
-They may be unstable on another Pocket386 or another ISA peripheral combination.
-
-### Correct interpretation
-
-A successful test under aggressive settings is useful evidence that the driver does not require extremely conservative timing on that machine.
-
-It does **not** mean everyone should copy those BIOS values.
-
-When troubleshooting:
-
-1. use normal/default BIOS settings first;
-2. verify USB operation;
-3. only then experiment with performance-oriented timing.
-
----
-
-## 32. Do not confuse BIOS timing problems with USB-media compatibility
-
-We repeatedly had reasons to suspect timing.
-
-Sometimes timing really matters on ISA.
-
-But one troublesome flash drive can create almost the same symptom pattern.
-
-When debugging, change one variable at a time:
-
-```text
-same BIOS + different stick
-different BIOS + same stick
-cold boot vs hotplug
-read-only vs write
-```
-
-Without that matrix, it is easy to "fix" the wrong thing.
-
----
-
-# DOS / DRIVER ENGINEERING LESSONS
-
-## 33. Preserve interrupt-chain ownership carefully
-
-For every hooked interrupt:
-
-- store the previous vector;
-- chain correctly;
-- only remove your hook if the vector still points to your handler;
-- never blindly restore a vector if another TSR has installed itself after you.
-
-The Windows-transition code follows this rule for `INT 33h`.
-
-This is essential TSR etiquette.
-
----
-
-## 34. Installation order is part of compatibility
-
-Relevant order on the working DOS setup is conceptually:
-
-```text
-CONFIG.SYS:
-    CH375USB.SYS
-
-AUTOEXEC.BAT:
-    CTMOUSE.EXE
-```
-
-CH375USB must therefore be able to discover and chain CTMOUSE later.
-
-A driver architecture that assumes all cooperating TSRs already exist during `DEVICE=` initialization will fail in normal DOS boot order.
-
----
-
-## 35. Be suspicious of work done inside an ISR
-
-A 386 is slow enough that code which looks tiny on a modern machine may be expensive.
-
-Inside timer/interrupt paths:
-
-- do not enumerate devices;
-- do not wait through long USB retry loops;
-- do not perform filesystem probing;
-- do not spin indefinitely on NAK;
-- do not scan an entire topology unnecessarily.
-
-Set a flag and let the DOS idle hook do the heavy work.
-
----
-
-## 36. Keep diagnostic stage markers
-
-The source keeps stage values such as enumeration/native-failure stages.
-
-This is extremely useful on hardware where you do not have:
-
-- a kernel debugger;
-- USB protocol tracing;
-- a convenient serial debug console;
-- modern crash dumps.
-
-A one-byte "last stage reached" value can tell you whether failure happened during:
-
-```text
-reset
-descriptor
-address assignment
-configuration descriptor
-configuration set
-native disk init
-capacity
-ready
-mount
-```
-
-### Lesson
-
-On retro bare-metal work, crude diagnostics are often better than elegant diagnostics you cannot actually observe.
-
----
-
-## 37. Keep the known-good path while adding features
-
-The driver evolved from storage into HID and hotplug.
-
-An important discipline is to avoid replacing a working storage path merely because a generic architecture looks cleaner.
-
-That is why CH375 native root storage remains available while generic USB MSC exists as a fallback.
-
-Retro hardware rewards boring working code.
-
----
-
-# TESTING PRACTICES THAT PAID OFF
-
-## 38. Test cold boot and hotplug separately
-
-These are different paths.
-
-A device that works when present during boot may still expose bugs when:
-
-- attached after boot;
-- removed while idle;
-- removed after file access;
-- reattached;
-- replaced by a different class of USB device.
-
-Every class should be tested in both conditions.
-
----
-
-## 39. Test the mouse in a real DOS application
-
-A synthetic "mouse packet received" test is not enough.
-
-DOS EDIT was valuable because it exercised:
-
-- frequent `INT 33h` position queries;
-- visible cursor motion;
-- actual clicks;
-- callbacks / mouse-driver behaviour.
-
-The application exposed problems that raw HID logging would not.
-
----
-
-## 40. Specifically test DOS -> Windows after using the mouse
-
-This deserves its own regression test.
-
-The critical sequence is:
-
-```text
-boot DOS
-load/use mouse
-move it repeatedly
-click buttons
-run a DOS mouse-aware program
-exit that program
-start Windows 95
-```
-
-Windows starting successfully only when the mouse was *not* touched is a strong signal of leaked DOS-side mouse state.
-
-The Windows-transition safeguards introduced in 0.4.11 and retained in 0.4.12 were created because of this exact class of failure.
-
----
-
-## 41. Test short clicks, not only held buttons
-
-For mouse buttons:
-
-- press and hold;
-- press/release quickly;
-- double click;
-- move while clicking;
-- click without moving.
-
-Fast press/release is the test that proves whether the driver preserves edges instead of only storing current state.
-
----
-
-## 42. Test write behaviour explicitly
-
-A drive that reads correctly is not proof that writes are safe.
-
-Useful checks include:
-
-- create a file;
-- copy a file;
-- compare contents;
-- delete it;
-- remount/reboot and verify filesystem integrity;
-- test writes crossing sector boundaries at the DOS filesystem level.
-
-The driver optionally verifies written sectors and issues cache synchronization on the BOT path.
-
-Retro removable media corruption is not amusing after the first time.
-
----
-
-# EXTERNAL USB HUBS
-
-## 43. Hub support exists but should still be considered experimental
-
-The source contains support for one external USB hub with a limited number of downstream ports.
-
-It includes:
-
-- hub descriptor retrieval;
-- port power;
-- port status;
-- reset;
-- connection-change acknowledgement;
-- attach/detach handling.
-
-However, this path has not received the same real-hardware validation as root storage, keyboard and mouse.
-
-### Do not confuse "implemented" with "tested"
-
-For public documentation, keep that distinction explicit.
-
----
-
-# WHAT NOT TO ASSUME
-
-## 44. Do not assume a modern USB device will be easier
-
-Newer flash drives and composite HID devices may be less friendly to a minimal USB 1.x host implementation than older simple devices.
-
-For bring-up, boring old hardware is often ideal.
-
----
-
-## 45. Do not assume every HID device is boot-protocol compatible
-
-CH375USB currently targets boot keyboard and boot mouse behaviour.
-
-An arbitrary gaming keyboard, touchpad, multimedia device or composite HID peripheral may require report-descriptor parsing that the current driver does not implement.
-
----
-
-## 46. Do not assume Windows will inherit DOS input services
-
-Windows 95 does not simply keep calling the DOS mouse and keyboard interfaces as if it were a DOS application.
-
-Protected-mode input support is a separate project.
-
-A future Windows companion would need to integrate with Windows 95's protected-mode keyboard/mouse architecture rather than extending the DOS shim deeper into Windows.
-
----
-
-## 47. Do not assume a timeout means "device absent"
-
-A timeout can mean:
-
-- wrong controller state;
-- endpoint NAK;
-- incorrect toggle;
-- failed reset release;
-- media not ready;
-- a transfer still settling;
-- unsuitable USB device;
-- overly aggressive hardware timing.
-
-Keep diagnostic context around the timeout.
-
----
-
-# RECOMMENDED DEBUGGING ORDER
-
-When a new Pocket386/CH375 setup does not work, debug in this order.
-
-## Step 1 — controller
-
-Verify:
-
-```text
-I/O base
-CHECK_EXIST response
-command/data port mapping
-```
-
-## Step 2 — conservative hardware environment
-
-Use default/conservative BIOS timings.
-
-Remove unrelated variables.
-
-Use a simple known-good USB device.
-
-## Step 3 — root connection
-
-Confirm connect/disconnect status is observed.
-
-Confirm reset exits back to host mode.
-
-## Step 4 — one class only
-
-For storage, try root native storage first.
-
-For HID, test one plain keyboard or plain mouse.
-
-Avoid a hub initially.
-
-## Step 5 — enumeration stages
-
-Determine exactly where enumeration fails.
-
-Do not change five delays at once.
-
-## Step 6 — DOS integration
-
-Only after raw USB operation works, test:
-
-- DOS block-device requests;
-- keyboard scan-code injection;
-- CTMOUSE + INT 33h mouse bridge.
-
-## Step 7 — hotplug
-
-Then test:
-
-- attach;
-- detach;
-- reattach;
-- different device.
-
-## Step 8 — Windows transition
-
-Finally test Windows 95 startup after actively using DOS HID.
-
----
-
-# CH375 DATASHEET AUDIT — 0.4.12
-
-The 0.4.12 low-level changes were made as a conservative delta from the known-good 0.4.11 code and checked directly against WCH **CH375 Datasheet (I), Version 4** and **CH375 Datasheet (II): USB Basic Transmission Commands, Version 4**. The goal was not to redesign the driver, but to replace assumptions with documented controller behaviour where that could be done without discarding proven compatibility paths.
-
-## 48. Command-port bit 7 is the parallel-mode INT# state
-
-Datasheet I states that reading the CH375 command port in parallel mode exposes the interrupt request on bit 7.
-
-The 0.4.12 control-transfer fallback therefore checks the pending-interrupt state before issuing `GET_STATUS`, instead of consuming status blindly. This reduces the risk of treating an unrelated or stale status byte as completion of the current operation.
-
-### Lesson
-
-On a polled CH375 host, `GET_STATUS` should correspond to a real pending controller event whenever possible.
-
----
-
-## 49. Native DISK_SIZE data must actually be consumed
-
-`DISK_SIZE` returns an 8-byte capacity block containing both sector count and physical sector size. Earlier code mainly used command success as the probe result.
-
-Starting with 0.4.12, the native path reads and parses the returned capacity information. The current DOS block-device implementation is built around 512-byte logical sectors, so media reporting a different physical sector size is rejected safely rather than being accessed with an incorrect assumption.
-
-This is deliberately a validation step, not yet a sector-translation layer.
-
----
-
-## 50. DISK_R_SENSE is an operation, not a fire-and-forget hint
-
-Datasheet I specifies that `DISK_R_SENSE` completes through an interrupt/status result and returns sense data through the CH375 data buffer.
-
-The 0.4.12 recovery path now waits for completion and drains the returned sense data before issuing the next native disk command. Otherwise the sense completion could remain pending and be mistaken for the status of the following operation.
-
-### Lesson
-
-When a CH375 command has an interrupt-completion contract, consume the whole command lifecycle before starting another one.
-
----
-
-## 51. SET_RETRY must be considered part of controller state
-
-Datasheet II documents the `SET_RETRY` command and the reset default `85h`. In that default, NAK can be retried indefinitely inside the CH375. That behaviour is dangerous for resident polling code because an idle HID endpoint normally NAKs.
-
-The 0.4.12 generic path therefore programs retry policy explicitly after root reset and after configuration rather than relying on reset defaults. The CH375 built-in `DISK_*` firmware path is kept conservative and is not unnecessarily rewritten around the generic policy.
-
-### Lesson
-
-A bounded software wait is not enough if the controller itself has been configured to retry forever.
-
----
-
-## 52. Control-transfer state must be cleared on failure too
-
-During the datasheet audit, a separate state bug was found: a failed zero-data control OUT request could leave `usb_control_wait` set. A later unrelated transfer could then inherit the long control-transfer wait path.
-
-0.4.12 clears this state on the failure path as well as the normal completion path.
-
-This fix is not a new USB feature; it is defensive state cleanup revealed while checking control-transfer behaviour against Datasheet II.
-
----
-
-## 53. Some documented optimizations remain intentionally unused
-
-Datasheet II documents additional helpers such as `RD_USB_DATA0`, `ISSUE_TKN_X`, `DISK_MAX_LUN`, explicit endpoint toggle controls and simplified control requests. Not every documented command needs to replace known-good code immediately.
-
-For the first 0.4.12 audit:
-
-- `RD_USB_DATA0` is not substituted everywhere merely for its small efficiency gain;
-- multi-LUN support is not enabled yet;
-- non-512-byte media is detected but not translated;
-- low-speed devices behind an external hub remain experimental;
-- existing conservative 386-side software delays are retained even though Datasheet I now gives minimum timing values.
-
-### Lesson
-
-Documentation should guide changes, not force needless churn in a working retro driver.
-
----
-
-## 54. Real-hardware regression test after the 0.4.12 audit
-
-The datasheet changes were tested on the same Pocket386 hardware used for 0.4.11. The following behaviour was observed:
-
-- USB mass storage remained usable;
-- USB keyboard remained usable;
-- live root-device replacement worked in the sequence **flash drive -> unplug -> keyboard -> flash drive**, with each newly attached device becoming usable without rebooting;
-- USB mouse functionality also remained working. An apparent mouse regression was traced to the machine's BIOS mouse setting being disabled, not to CH375USB.
-
-### Troubleshooting lesson
-
-On this Pocket386, if storage and keyboard still work but the mouse suddenly appears completely dead, verify the BIOS mouse setting before changing CH375USB. A firmware setting can imitate a driver regression surprisingly well.
-
----
-
-# CURRENT KNOWN-GOOD FUNCTIONAL SUMMARY
-
-As of CH375USB 0.4.12 on the tested Pocket386:
+As of CH375USB 0.4.13 on the tested Pocket386:
 
 | Function | DOS | DOS hotplug | Windows 95 GUI |
 |---|---:|---:|---:|
 | USB flash storage read | Yes | Yes | Yes via pre-Windows DOS driver method |
 | USB flash storage write | Yes | Yes | Yes via pre-Windows DOS driver method |
 | USB keyboard | Yes | Yes | No |
-| USB mouse movement | Yes | Yes | No |
-| USB mouse buttons | Yes | Yes | No |
+| USB mouse movement/buttons | Yes | Yes | No |
 | External hub | Experimental | Experimental | Not supported |
 | Windows USB hotplug | — | — | Not supported/reliable |
 
-For Windows storage, the USB drive should be detected under DOS before starting Windows.
+For Windows storage, detect the USB drive under DOS before starting Windows.
 
 ---
 
-# FUTURE WORK
+# Reusable engineering lessons
 
-## 55. Windows HID needs its own protected-mode companion
+1. Keep interrupt handlers short and defer expensive work.
+2. Respect DOS TSR/device-driver installation order.
+3. Keep a proven hardware-specific path while adding a generic fallback.
+4. Bound every hardware wait and understand controller-side retry state.
+5. USB reset paths must always release reset.
+6. Hotplug needs state, invalidation and retry/backoff — not just a presence bit.
+7. Mouse movement and button edges are different classes of state.
+8. Never retain application callback addresses indefinitely in resident code.
+9. DOS input support is not Windows protected-mode input support.
+10. Test multiple USB devices before blaming timing code.
+11. Test real application behaviour, not only packet-level success.
+12. Document what was actually tested separately from what merely exists in source.
+13. Translate DOS protocol values explicitly instead of reusing internal boolean encodings.
+14. Use the actual EP0 max-packet size to identify short control packets.
+15. Resident x86 string code must establish and restore its own Direction Flag state.
+16. On block-I/O errors, return the completed sector count as well as an error status.
+17. Every successful enumeration path must complete the class-specific initialization it advertises.
+18. Treat external code reviews as hypotheses to verify against the actual code, datasheets and hardware.
 
-A sensible future architecture is:
-
-```text
-DOS:
-    CH375USB.SYS
-        storage
-        USB keyboard -> DOS keyboard path
-        USB mouse    -> INT 33h bridge
-
-Windows 95:
-    protected-mode companion/VxD
-        USB keyboard -> Windows keyboard services
-        USB mouse    -> Windows virtual mouse services
-```
-
-The current 0.4.12 DOS driver already contains the important opposite behaviour: it knows when to suspend its DOS HID bridge as Windows enters enhanced mode.
-
-That separation should be preserved.
-
----
-
-## 56. Hub testing should be systematic
-
-When hub testing begins, use:
-
-1. hub alone;
-2. keyboard through hub;
-3. mouse through hub;
-4. storage through hub;
-5. two HID devices;
-6. HID + storage;
-7. unplug one downstream device;
-8. unplug the hub itself.
-
-Record low-speed/full-speed behaviour separately.
-
----
-
-# FINAL TAKEAWAYS
-
-The most valuable lessons from this project were not individual CH375 command numbers.
-
-They were engineering lessons:
-
-1. **Keep interrupt handlers short.**
-2. **Defer expensive hotplug work.**
-3. **A DOS `DEVICE=` driver must respect TSR installation order.**
-4. **Mouse movement and mouse clicks are different classes of state.**
-5. **Latch edges; do not only sample current button state.**
-6. **Never retain application callbacks indefinitely in resident code.**
-7. **Use Windows transition notifications to shut down DOS-only hooks safely.**
-8. **DOS input support is not Windows protected-mode input support.**
-9. **Try multiple USB devices before blaming timing code.**
-10. **Keep a working hardware-specific path even when adding a cleaner generic path.**
-11. **Bound every hardware wait.**
-12. **A USB reset path must always release reset.**
-13. **Use state machines and retry backoff for hotplug.**
-14. **Test the real application behaviour, not only packet-level success.**
-15. **Document what was actually tested separately from what merely exists in the source.**
-16. **Program CH375 retry policy explicitly; reset defaults are not always safe for polling.**
-17. **Consume the complete status/data lifecycle of native CH375 commands.**
-18. **Keep documented paths and real-hardware compatibility fallbacks when both are useful.**
-
-CH375USB reached working DOS storage, keyboard, mouse and hotplug not because the CH375 suddenly became simple, but because each layer was gradually isolated: controller, USB transport, DOS interfaces, hotplug state and finally the DOS-to-Windows boundary.
-
-That separation is probably the most reusable knowledge in the whole experiment.
+CH375USB became useful by isolating layers one at a time: CH375 controller state, USB transport, DOS interfaces, HID bridging, hotplug state and the DOS/Windows boundary. Preserving that separation is more important than adding every possible feature quickly.
