@@ -557,7 +557,71 @@ storage_ready_check:
     stc
     ret
 
+; Validate an absolute sector LBA against the capacity reported by the
+; currently selected storage backend. Input DX:AX = absolute LBA.
+; CF=0 valid, CF=1 outside the device or no active storage backend.
+storage_lba_valid:
+    cmp byte [storage_mode],STORAGE_NATIVE
+    je .native
+    cmp byte [storage_mode],STORAGE_BOT
+    je .bot
+    stc
+    ret
+.native:
+    ; native_sector_count is a sector COUNT, so the valid range is
+    ; 0 .. count-1.
+    cmp dx,[native_sector_count+2]
+    jb .ok
+    ja .bad
+    cmp ax,[native_sector_count]
+    jb .ok
+    jmp .bad
+.bot:
+    ; READ CAPACITY(10) reports the last valid LBA inclusively.
+    cmp dx,[msc_last_lba+2]
+    jb .ok
+    ja .bad
+    cmp ax,[msc_last_lba]
+    jbe .ok
+.bad:
+    stc
+    ret
+.ok:
+    clc
+    ret
+
+
+; Validate a DOS request range before starting I/O. Input DX:AX = first
+; absolute LBA and CX = sector count. Registers are preserved.
+storage_range_valid:
+    push ax
+    push cx
+    push dx
+    or cx,cx
+    jz .ok
+    dec cx
+    add ax,cx
+    adc dx,0
+    jc .bad
+    call storage_lba_valid
+    jc .bad
+.ok:
+    pop dx
+    pop cx
+    pop ax
+    clc
+    ret
+.bad:
+    pop dx
+    pop cx
+    pop ax
+    stc
+    ret
+
+
 storage_read_sector_far:
+    call storage_lba_valid
+    jc .bad
     cmp byte [storage_mode],STORAGE_NATIVE
     je native_read_sector_far
     cmp byte [storage_mode],STORAGE_BOT
@@ -568,6 +632,8 @@ storage_read_sector_far:
     ret
 
 storage_write_sector_far:
+    call storage_lba_valid
+    jc .bad
     cmp byte [storage_mode],STORAGE_NATIVE
     je native_write_sector_far
     cmp byte [storage_mode],STORAGE_BOT
