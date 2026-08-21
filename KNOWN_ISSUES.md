@@ -1,6 +1,6 @@
 # Known issues / deferred work
 
-This file tracks current CH375USB 0.5.0 limitations and work that may be worth doing later. Historical fixes belong in [`CHANGELOG.md`](CHANGELOG.md).
+This file tracks current CH375USB 0.5.0 limitations, hardware caveats and work that may be worth doing later. Historical fixes belong in [`CHANGELOG.md`](CHANGELOG.md).
 
 ## Confirmed open issues
 
@@ -13,7 +13,8 @@ The current architecture is:
 ```text
 USB HID mouse
     -> CH375USB.SYS
-    -> BIOS PS/2 callback / DOS mouse driver
+    -> virtual BIOS PS/2 callback
+    -> CuteMouse / CTMOUSE
     -> INT 33h callback stream
     -> CH375MOU.DRV
     -> Windows 95 mouse event procedure
@@ -33,7 +34,47 @@ The driver translates HID boot-keyboard reports into PC-compatible scan codes. P
 
 If the controller probe fails, CH375USB avoids installing normal runtime USB behavior, but the initialization path is not yet optimized to return a zero-unit/minimal-resident image.
 
+## Pocket386 hardware caveats
+
+### BIOS settings can disappear after the main battery is fully discharged
+
+The Pocket386 does **not** have a separate CMOS/RTC backup battery comparable to the coin cell used by a conventional desktop PC. BIOS/CMOS retention depends on the same rechargeable battery that powers the machine.
+
+If that battery is allowed to discharge completely, BIOS settings may be lost and restored to firmware defaults. This can look like a CH375USB regression even though the driver has not changed.
+
+Two defaults are particularly relevant:
+
+- mouse support may revert to **Disabled**, making the USB mouse path appear dead;
+- the floppy/FDC setting may revert to **Enabled**, producing the familiar FDC/floppy failure message or boot beeps on a machine without a usable floppy configuration.
+
+Before debugging mouse or boot behavior after the machine has been stored with a flat battery, enter the BIOS and verify these settings.
+
+### Third-party CMOS save/restore utilities are outside project support
+
+Generic DOS utilities exist that can save CMOS/BIOS configuration data and restore it later. Some users may choose to restore a known-good CMOS image from `AUTOEXEC.BAT` before starting Windows.
+
+This is a potentially useful workaround for the Pocket386 retention limitation, but it is **not a CH375USB feature**. The project does not bundle, recommend, test or support a specific CMOS save/restore tool or command sequence. Utility formats and CMOS layouts vary, and restoring incorrect data can create additional configuration or boot problems.
+
+### Community-modified Pocket386 BIOS is untested
+
+Community forum posts describe a modified Pocket386 BIOS with mouse support enabled and the floppy/FDC setting disabled by default, intended to avoid the two reset-default problems above.
+
+References:
+
+- https://forum.vcfed.org/index.php?threads/pocket-386.1247640/page-6
+- https://www.vogons.org/viewtopic.php?start=100&t=99751
+
+This modified firmware is **not part of CH375USB and has not been tested by this project**. The project currently has no verified instructions for flashing the Pocket386 BIOS. A related community report describes modifying the defaults with AMIBCP 6.24 and programming the firmware chip directly. Treat any BIOS modification or flashing attempt as an independent, potentially machine-bricking operation.
+
 ## Compatibility limitations
+
+### CuteMouse is the tested runtime mouse dependency
+
+The 0.5.0 architecture deliberately lets a conventional BIOS/PS2-aware DOS mouse driver own `INT 33h`. The implementation and Windows bridge were developed and tested with **CuteMouse / CTMOUSE**, so CuteMouse is the supported reference runtime dependency for mouse operation.
+
+CH375USB supplies the USB HID and virtual BIOS PS/2 side; it does not replace a complete DOS `INT 33h` mouse driver. Another compatible DOS mouse driver may work in principle, but it is not currently part of the tested support claim.
+
+CuteMouse itself is not distributed with CH375USB.
 
 ### Typematic is software-generated
 
@@ -42,10 +83,6 @@ If the controller probe fails, CH375USB avoids installing normal runtime USB beh
 ### Windows storage is not native USB Plug and Play
 
 A storage device detected by DOS can be carried into Windows 95 through the real-mode block-device path. Windows-side insertion/removal should not be described as native USB mass-storage hotplug.
-
-### Mouse integration depends on a DOS mouse driver
-
-The 0.5.0 architecture deliberately lets a conventional BIOS/PS2-aware DOS mouse driver such as CuteMouse own `INT 33h`. CH375USB provides the virtual BIOS PS/2 side and does not attempt to replace every mouse-driver function itself.
 
 ### HID boot protocol only
 
