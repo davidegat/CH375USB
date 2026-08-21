@@ -10,7 +10,7 @@ No unreleased code changes yet.
 
 0.5.0 is a major input-architecture update built on the hardware-tested 0.4.13 DOS storage/HID baseline. The release moves the mouse path toward conventional BIOS/PS/2 semantics, adds a Win16 mouse-driver bridge for Windows 95 experiments, adds Windows-aware incremental HID hotplug handling, and improves keyboard behavior.
 
-This repository publishes the **source** for 0.5.0. No new prebuilt 0.5.0 binaries are committed.
+Prebuilt 0.5.0 `CH375USB.SYS` and `CH375MOU.DRV` binaries are published in [`binary/`](binary/) alongside the source.
 
 ### Added
 
@@ -31,12 +31,14 @@ This repository publishes the **source** for 0.5.0. No new prebuilt 0.5.0 binari
 - Windows-side USB mouse re-enumeration is split into a staged state machine instead of performing full controller reset/enumeration inside one timer invocation.
 - `build.sh` now builds both `CH375USB.SYS` and `CH375MOU.DRV`, bootstraps a project-local Open Watcom V2 toolchain when needed, and rejects linker warnings or malformed NE output.
 - `BUILD.BAT` remains a simple DOS/Windows command-line build of `CH375USB.SYS` only.
+- Release documentation is organized under `documentation/` for `NOTICE.md`, `KNOWLEDGE.md` and `KNOWN_ISSUES.md`; prebuilt release binaries are organized under `binary/`.
 
 ### Compatibility status
 
 - DOS USB mass storage remains supported through the established native/BOT paths.
 - DOS USB boot keyboard remains supported; 0.5.0 adds software typematic/repeat.
 - DOS USB boot mouse remains supported through the BIOS/PS2 plus conventional DOS mouse-driver path.
+- CuteMouse / CTMOUSE is the tested/reference runtime DOS mouse dependency for the 0.5.0 mouse stack.
 - Windows 95 USB mouse support through `CH375MOU.DRV` is implemented but remains experimental and is not claimed as universally validated.
 - Windows 95 USB keyboard input is not implemented.
 - Windows 95 storage remains a DOS-backed compatibility path rather than native USB mass-storage Plug and Play.
@@ -47,9 +49,9 @@ The 0.5.0 mouse path deliberately avoids injecting mouse bytes through the physi
 
 ### Build / distribution
 
-- New 0.5.0 prebuilt binaries are intentionally not committed to the repository.
-- The old tracked `CH375USB.SYS` 0.4.13 binary is removed from the 0.5.0 source tree.
-- Users should build binaries from the published source with `build.sh` or `BUILD.BAT`.
+- Prebuilt 0.5.0 binaries are published as `binary/CH375USB.SYS` and `binary/CH375MOU.DRV`.
+- The stale tracked `CH375USB.SYS` 0.4.13 binary was removed before the 0.5.0 binary was published.
+- `build.sh` and `BUILD.BAT` still produce local build outputs in the working-tree root; `binary/` contains the published release copies.
 
 ### Still open / experimental
 
