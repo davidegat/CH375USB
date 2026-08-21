@@ -28,8 +28,6 @@ The low-level CH375 audit was checked against WCH's **CH375 Datasheet (I), Versi
 
 ## Binary distribution
 
-The 0.5.0 repository is a **source release**. No new prebuilt 0.5.0 binaries are committed.
-
 When users build `CH375USB.SYS` or `CH375MOU.DRV` from this source, those files are outputs of this project and must not be confused with vendor or third-party binaries.
 
 ## Sources, prior work and inspirations
