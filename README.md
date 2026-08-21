@@ -272,7 +272,6 @@ CH375USB has **not been tested** under Windows 3.1 or Windows for Workgroups 3.1
 - [`CHANGELOG.md`](CHANGELOG.md) — complete release history and fixes.
 - [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md) — current open issues and intentionally deferred work.
 - [`KNOWLEDGE.md`](KNOWLEDGE.md) — architecture, debugging rules and lessons learned on real hardware.
-- [`DATASHEET-AUDIT.md`](DATASHEET-AUDIT.md) — focused notes from the CH375 Datasheet I/II audit that led to the 0.4.12 low-level changes retained by 0.4.13.
 - [`NOTICE.md`](NOTICE.md) — project independence and source/reference provenance.
 
 ## License and source provenance
