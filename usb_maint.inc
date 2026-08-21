@@ -1,4 +1,4 @@
-; CH375USB 0.4.12-exp1 - usb_maint.inc
+; CH375USB 0.4.13 - usb_maint.inc
 ; Author: Davide "gat" - https://github.com/davidegat
 ; Copyright (C) 2026 Davide "gat"
 ; SPDX-License-Identifier: GPL-3.0-or-later
@@ -280,7 +280,17 @@ generic_root_enumerate_wch:
     call hub_init_slot
     jc .fail
 .not_hub:
-
+    ; The built-in WCH enumeration path used to recognize CAP_MSC but never
+    ; initialize/mount it. Mirror the generic path and run BOT/SCSI init for
+    ; a root MSC interface. As in usb_enumerate_addr0, MSC init failure does
+    ; not invalidate an otherwise useful composite device.
+    xor ax,ax
+    call slot_ptr_ax
+    test byte [di+D_CAPS],CAP_MSC
+    jz .not_msc
+    xor ax,ax
+    call msc_init_slot
+.not_msc:
 
     mov byte [root_link_state],1
     mov byte [root_connect_seen],1
