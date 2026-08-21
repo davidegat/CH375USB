@@ -11,8 +11,8 @@ REM              C:\OPENWAT\BINW\WLINK.EXE
 REM
 REM Open Watcom V2 DOS/Win16 installer:
 REM   https://github.com/open-watcom/open-watcom-v2/releases
-REM NASM native-DOS builds (recommended 2.16.03):
-REM   https://www.nasm.us/pub/nasm/releasebuilds/2.16.03/dos/
+REM NASM DOS package (FreeDOS repository, NASM 3.01):
+REM   https://www.ibiblio.org/pub/micro/pc-stuff/freedos/files/repositories/latest/html/en/devel/nasm/20251011.1/index.html
 
 SET NASMROOT=C:\NASM
 SET OWROOT=C:\OPENWAT
