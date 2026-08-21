@@ -115,7 +115,7 @@ if [ -d "$OWROOT/h" ]; then
 fi
 
 # WLINK's named SYSTEM definitions (including windows_dll) live in
-# wlink.lnk/wlsystem.lnk beside the linker.  Calling wlink by absolute path is
+# wlink.lnk/wlsystem.lnk beside the linker. Calling wlink by absolute path is
 # NOT enough: Open Watcom searches PATH for these files. An earlier prototype
 # omitted this and silently linked CH375MOU as a normal Windows executable.
 OW_BINDIR="$(dirname "$WLINK")"
@@ -132,20 +132,21 @@ printf 'NASM              : %s\n' "$(command -v nasm)"
 printf 'WASM              : %s\n' "$WASM"
 printf 'WLINK             : %s\n\n' "$WLINK"
 
-rm -f CH375USB.SYS CH375W.SYS CH375MOU.DRV CH375MOU.MAP
-rm -f "$BUILD/CH375MOU.OBJ"
+rm -f CH375USB.SYS CH375W.SYS CH375MOU.DRV CH375MOU.MAP CH375MOU.OBJ
 
-# Unified release SYS.  WIN_MOUSE_INT33_BRIDGE defaults to 1 in the source:
+# Unified release SYS. WIN_MOUSE_INT33_BRIDGE defaults to 1 in the source:
 # normal DOS behavior is preserved, and the Windows-specific path wakes only
-# after the enhanced-mode notification.  There is no separate CH375W.SYS.
+# after the enhanced-mode notification. There is no separate CH375W.SYS.
 nasm -f bin CH375USB.ASM -o CH375USB.SYS
 
 # Our independently-written Win16 mouse.drv-compatible bridge.
 # WASM emits OMF; WLINK emits a 16-bit Windows NE driver/DLL image.
-# The ASM deliberately has a plain END (no MODEND start address).  The linker
+# CH375MOU.OBJ is intentionally produced in the project root because the same
+# CH375MOU.LNK response file is also consumed by the real-DOS BUILD.BAT.
+# The ASM deliberately has a plain END (no MODEND start address). The linker
 # file uses FORMAT WINDOWS DLL INITGLOBAL plus OPTION START=Initialize, so there
 # is exactly one initializer and no Open Watcom C DLL startup is involved.
-"$WASM" -q -2 -fo="$BUILD/CH375MOU.OBJ" CH375MOU.ASM
+"$WASM" -q -2 -fo=CH375MOU.OBJ CH375MOU.ASM
 
 LINK_LOG="$BUILD/CH375MOU.wlink.log"
 set +e
@@ -161,6 +162,7 @@ if grep -q 'Warning!' "$LINK_LOG"; then
     echo "See $LINK_LOG" >&2
     exit 1
 fi
+rm -f CH375MOU.OBJ
 
 # Do not trust a zero WLINK exit status alone. WLINK can
 # warn about an unknown SYSTEM and still emit a superficially valid NE file.
