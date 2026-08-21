@@ -4,7 +4,7 @@
 **Target:** Pocket386 and similar 386-class DOS PCs with an ISA-connected CH375 USB host controller  
 **I/O mapping used by the tested hardware:** data `0260h`, command/status `0261h`
 
-This document is the project's engineering reference. Release history belongs in [`CHANGELOG.md`](CHANGELOG.md); open work belongs in [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md).
+This document is the project's engineering reference. Release history belongs in [`CHANGELOG.md`](../CHANGELOG.md); open work belongs in [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md).
 
 ---
 
@@ -283,11 +283,11 @@ A zero linker exit status is not considered sufficient: warnings cause the build
 
 ## 15. Distribution policy for 0.5.0
 
-0.5.0 is published as source.
+Prebuilt `CH375USB.SYS` and `CH375MOU.DRV` binaries are published alongside the 0.5.0 source.
 
-Do not commit an old `CH375USB.SYS` binary and let users mistake it for the new release. A repository containing 0.5.0 source but a tracked 0.4.13 binary is actively misleading.
+Published binaries must correspond to the current source. In particular, do not leave an older `CH375USB.SYS` next to newer source and let users mistake it for the current release.
 
-Build artifacts are outputs, not authoritative source.
+Build artifacts are derived outputs; the source remains the authoritative implementation.
 
 ---
 
@@ -361,5 +361,5 @@ Do not convert one successful program into a blanket compatibility claim.
 7. Keep Windows enumeration incremental and nonblocking.
 8. Preserve FLAGS/DF discipline in resident code.
 9. Distinguish implemented, tested and planned behavior in public docs.
-10. Do not ship stale binaries next to newer source.
+10. Never ship stale binaries next to newer source.
 11. Change one architectural variable at a time and keep rollback/test paths reproducible.

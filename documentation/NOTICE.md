@@ -7,7 +7,7 @@ CH375USB is an independent, unofficial open-source project and is not affiliated
 
 The names **WCH**, **WinChipHead**, and **CH375** are used solely to identify hardware, documentation, and historical software with which this project interoperates.
 
-CH375USB is distributed under the GNU General Public License version 3 or, at your option, any later version. See `LICENSE`.
+CH375USB is distributed under the GNU General Public License version 3 or, at your option, any later version. See [`LICENSE`](../LICENSE).
 
 ## Source-code provenance
 
@@ -28,7 +28,12 @@ The low-level CH375 audit was checked against WCH's **CH375 Datasheet (I), Versi
 
 ## Binary distribution
 
-When users build `CH375USB.SYS` or `CH375MOU.DRV` from this source, those files are outputs of this project and must not be confused with vendor or third-party binaries.
+Prebuilt 0.5.0 binaries are published under [`../binary/`](../binary/):
+
+- [`CH375USB.SYS`](../binary/CH375USB.SYS)
+- [`CH375MOU.DRV`](../binary/CH375MOU.DRV)
+
+They are build outputs of this project and must not be confused with vendor or third-party binaries.
 
 ## Sources, prior work and inspirations
 
@@ -55,7 +60,7 @@ No source block from these projects is included in CH375USB.
 ### DOS USB and mouse implementations
 
 - **crazii / USBDDOS** — consulted as an independent DOS USB stack and architectural reference for DOS USB/HID/storage design questions.
-- **CuteMouse / CTMOUSE** — used as the conventional DOS mouse-driver interoperability target. CH375USB does not incorporate CuteMouse source code.
+- **CuteMouse / CTMOUSE** — the DOS mouse driver used as the interoperability target and **runtime dependency of the tested/reference CH375USB 0.5.0 mouse stack**. CH375USB does not distribute or incorporate CuteMouse source code. The reference package/project is available through FreeDOS and the CuteMouse SourceForge project.
 - **Bret Johnson / USBMOUSE** — consulted as historical/practical background for DOS USB mouse support and nonblocking/staged behavior. CH375USB's BIOS PS/2 and CH375 transport code are independent implementations.
 
 ### USB and storage specifications
@@ -83,15 +88,31 @@ These interface descriptions were used to build interoperable software, not to c
 
 ### FreeDOS DEVLOAD
 
-FreeDOS `DEVLOAD` is not part of CH375USB. It remains useful for a DOS-to-Windows boot profile in which `CH375USB.SYS` is loaded immediately before `WIN`.
+FreeDOS `DEVLOAD` is not part of CH375USB. It remains useful for the documented DOS-to-Windows boot profile in which `CH375USB.SYS` is loaded immediately before `WIN`.
+
+### Pocket386 hardware/community references
+
+Pocket386-specific behavior has also been informed by community reports and real-hardware observation. In particular, the machine does not use a separate coin-cell-style CMOS backup battery; BIOS/RTC retention depends on the main system battery. A complete discharge can therefore restore BIOS defaults, including disabling mouse support and re-enabling the floppy/FDC configuration.
+
+Community discussions have also published modified Pocket386 BIOS defaults intended to keep mouse support enabled and the unused floppy/FDC setting disabled. These third-party firmware modifications are **not part of CH375USB, have not been tested by this project, and are not endorsed by this project**. CH375USB currently provides no verified Pocket386 BIOS flashing procedure.
+
+References include:
+
+- https://forum.vcfed.org/index.php?threads/pocket-386.1247640/page-6
+- https://www.vogons.org/viewtopic.php?start=100&t=99751
 
 ### Community research and real-hardware reports
 
-Historical VOGONS discussions about CH375 ISA cards, Pocket386/Book8088-style systems, FreddyV's CH375 driver and CH375 external-firmware mode were used as experimental clues. Claims affecting CH375USB behavior were treated cautiously and, where possible, checked against documentation and real hardware.
+Historical VOGONS and VCFed discussions about CH375 ISA cards, Pocket386/Book8088-style systems, FreddyV's CH375 driver and CH375 external-firmware mode were used as experimental clues. Claims affecting CH375USB behavior were treated cautiously and, where possible, checked against documentation and real hardware.
 
-### AI-assisted development
+### AI-assisted development and review
 
-AI tools were used during iterative design, code review, debugging and documentation. Suggestions were treated as hypotheses and engineering assistance, not as authoritative hardware documentation. Working behavior is established by source review, public interface specifications and real-hardware testing.
+AI tools were used during iterative design, code generation/review, debugging and documentation.
+
+- **OpenAI ChatGPT** assisted with iterative design, implementation review, debugging hypotheses and documentation while the driver was repeatedly tested on real Pocket386 hardware.
+- **Anthropic Claude** was used as an independent code-review pass on an early prototype. In particular, that review identified that an early experimental `.SYS` skeleton lacked a valid DOS block-device header, real Strategy/Interrupt request handling and a complete block-device implementation; those findings influenced the subsequent redesign.
+
+Claude output is not included as third-party source code in this repository. AI suggestions from either tool were treated as hypotheses and engineering assistance, not as authoritative hardware documentation; working behavior is established by source review, public interface specifications and real-hardware testing.
 
 ## Independence statement
 
