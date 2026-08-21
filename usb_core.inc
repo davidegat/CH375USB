@@ -1,4 +1,4 @@
-; CH375USB 0.4.13 - usb_core.inc
+; CH375USB 0.5.0 - usb_core.inc
 ; Author: Davide "gat" - https://github.com/davidegat
 ; Copyright (C) 2026 Davide "gat"
 ; SPDX-License-Identifier: GPL-3.0-or-later
@@ -37,6 +37,9 @@ clear_slot_ax:
 
 
 clear_all_slots:
+%if MOUSE_BIOS_PS2
+    call bios_mouse_release_all
+%endif
     push ax
     push cx
     push di
@@ -54,6 +57,12 @@ clear_all_slots:
     mov di,kbd_old_keys
     mov cx,MAX_DEVICES*6
     rep stosb
+    mov di,kbd_repeat_usage
+    mov cx,MAX_DEVICES
+    rep stosb
+    mov di,kbd_repeat_ticks
+    mov cx,MAX_DEVICES
+    rep stosb
     mov byte [storage_slot],0FFh
     mov byte [storage_mode],STORAGE_NONE
     mov byte [hub_slot],0FFh
@@ -69,6 +78,9 @@ clear_all_slots:
 
 
 mark_all_detached_fast:
+%if MOUSE_BIOS_PS2
+    call bios_mouse_release_all
+%endif
     push ax
     push cx
     push di
@@ -79,6 +91,18 @@ mark_all_detached_fast:
     xor ax,ax
     mov cx,MAX_DEVICES*DEV_SIZE
     cld
+    rep stosb
+    mov di,kbd_old_mod
+    mov cx,MAX_DEVICES
+    rep stosb
+    mov di,kbd_old_keys
+    mov cx,MAX_DEVICES*6
+    rep stosb
+    mov di,kbd_repeat_usage
+    mov cx,MAX_DEVICES
+    rep stosb
+    mov di,kbd_repeat_ticks
+    mov cx,MAX_DEVICES
     rep stosb
     mov byte [storage_slot],0FFh
     mov byte [storage_mode],STORAGE_NONE
@@ -124,15 +148,11 @@ usb_control_in_slot:
     call usb_select_slot
     jc .fail
 
-    ; Endpoint 0 max-packet size comes from bMaxPacketSize0 in the device
-    ; descriptor and is stored in D_EP0.  A packet shorter than *that* value
-    ; ends a control-IN data stage; comparing against a hard-coded 64 bytes
-    ; breaks manual enumeration for devices whose EP0 is 8/16/32 bytes.
     xor bx,bx
     mov bl,[di+D_EP0]
     or bl,bl
     jnz .ep0_mps_ready
-    mov bl,8                  ; safe pre-descriptor/default EP0 size
+    mov bl,8
 .ep0_mps_ready:
     mov bp,bx
 
@@ -163,7 +183,6 @@ usb_control_in_slot:
     call ch_issue_token
     jc .fail
 
-
     push cs
     pop es
     mov di,usb_buf
@@ -172,7 +191,6 @@ usb_control_in_slot:
     mov bx,ax
     cmp bx,0
     je .status
-
 
     mov dx,[ctrl_wlength]
     sub dx,[ctrl_actual]
@@ -201,14 +219,12 @@ usb_control_in_slot:
     pop ds
     add [ctrl_actual],bx
 
-
     xor byte [xfer_toggle],040h
     cmp bx,bp
     je .data_loop
     jmp .status
 
 .status:
-
     mov al,TOG_DATA1
     call ch_set_out_toggle
     mov si,setup_buf
@@ -266,7 +282,6 @@ usb_control_out0_slot:
     call ch_issue_token
     jc .fail
 
-
     mov al,TOG_DATA1
     call ch_set_in_toggle
     xor al,al
@@ -291,8 +306,6 @@ usb_control_out0_slot:
     clc
     ret
 .fail:
-    ; Keep later transfers from inheriting the long control-wait mode after
-    ; a failed zero-data control request.
     mov byte [usb_control_wait],0
     pop es
     pop di
@@ -388,15 +401,12 @@ usb_enumerate_addr0:
     mov byte [di+D_ADDR],0
     mov byte [di+D_EP0],8
 
-
     mov byte [enum_fail_stage],03h
     call ch_get_device_descriptor0
     jc .fail
 
-
     mov al,[usb_buf+7]
     mov [di+D_EP0],al
-
 
     mov byte [enum_fail_stage],04h
     mov bl,[next_address]
@@ -411,7 +421,6 @@ usb_enumerate_addr0:
     mov bl,[enum_addr]
     mov [di+D_ADDR],bl
     inc byte [next_address]
-
 
     mov word [xfer_seg],cs
     mov word [xfer_off],cfg_buf
@@ -450,13 +459,11 @@ usb_enumerate_addr0:
     mov al,[cfg_buf+5]
     mov [di+D_CFG],al
 
-
     mov byte [enum_fail_stage],07h
     mov ax,0
     mov al,[xfer_slot]
     call usb_parse_config
     jc .fail
-
 
     mov byte [enum_fail_stage],08h
     mov ax,0
@@ -468,8 +475,6 @@ usb_enumerate_addr0:
     call usb_set_configuration
     jc .fail
 
-    ; Keep normal idle NAKs visible to software after enumeration.  This is
-    ; the documented SET_RETRY policy used by the fast HID/BOT polling paths.
     mov al,CH375_RETRY_FAST
     call ch_set_retry
 
@@ -479,6 +484,8 @@ usb_enumerate_addr0:
     call slot_ptr_ax
     test byte [di+D_CAPS],CAP_HUB
     jz .nohub
+    cmp byte [enum_hid_only],1
+    je .nohub
     cmp byte [xfer_slot],0
     jne .fail
     mov ax,0
@@ -500,6 +507,8 @@ usb_enumerate_addr0:
     call slot_ptr_ax
     test byte [di+D_CAPS],CAP_MSC
     jz .success
+    cmp byte [enum_hid_only],1
+    je .success
     mov ax,0
     mov al,[xfer_slot]
     call msc_init_slot
@@ -651,7 +660,6 @@ usb_parse_config:
     jmp .advance
 
 .done:
-
     test byte [di+D_CAPS],CAP_MSC
     jz .nomsc_check
     cmp byte [di+D_MSC_IN],0

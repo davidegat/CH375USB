@@ -1,102 +1,128 @@
 # Known issues / deferred work
 
-This file tracks **current** CH375USB limitations and work that may be worth doing later. Items already fixed in 0.4.13 are listed briefly at the end for traceability; the full history belongs in [`CHANGELOG.md`](CHANGELOG.md).
+This file tracks current CH375USB 0.5.0 limitations and work that may be worth doing later. Historical fixes belong in [`CHANGELOG.md`](CHANGELOG.md).
 
 ## Confirmed open issues
 
-### CH375 absent: the driver still reserves its DOS unit/resident memory
+### Windows 95 mouse support is still experimental
 
-**Status:** confirmed cleanup issue; low priority.
+`CH375MOU.DRV` and the Windows-aware hotplug state machine are implemented in 0.5.0, but broad real-hardware/application validation is incomplete.
 
-If the controller probe fails, CH375USB does not install its runtime interrupt hooks, but initialization still reports one block-device unit and keeps the normal resident image. A future cleanup can return zero units and a minimal break address when no controller exists.
+The current architecture is:
 
-## Useful future features
+```text
+USB HID mouse
+    -> CH375USB.SYS
+    -> BIOS PS/2 callback / DOS mouse driver
+    -> INT 33h callback stream
+    -> CH375MOU.DRV
+    -> Windows 95 mouse event procedure
+```
 
-### User-visible DOS notification for attach/detach events
+Treat successful operation on one machine/application as evidence, not as a universal compatibility guarantee.
 
-Hotplug already works internally for supported storage, boot keyboard and boot mouse devices, but DOS does not display connection/disconnection messages.
+### Windows 95 USB keyboard support is not implemented
 
-**Preferred design:** keep console output out of timer/USB paths. Add a small resident event queue exposed through a private `INT 2Fh` API, with an optional `CH375MON.COM` utility to display or log events.
+The keyboard path remains DOS-oriented. 0.5.0 improves DOS behavior with software typematic/repeat, but there is no protected-mode Win16/VxD keyboard companion equivalent to `CH375MOU.DRV`.
 
-### Full DOS removable-media capability advertisement
+### Some DOS programs may bypass the supported keyboard path
 
-The current driver keeps a basic block-device header and uses the corrected Media Check semantics for hotplug. A future implementation may advertise DOS Open/Close/Removable-Media support with attribute bit 11 (`0800h`) and implement command 15 correctly.
+The driver translates HID boot-keyboard reports into PC-compatible scan codes. Programs or games that read hardware in unusual ways, assume a physical keyboard controller, or bypass the conventional BIOS/DOS path may still fail to recognize the USB keyboard correctly.
 
-Do **not** add bit 6 (`0040h`) unless Generic IOCTL support is actually implemented; `0840h` is therefore not an accepted drop-in change.
+### CH375 absent: resident cleanup is incomplete
 
-### FAT32
+If the controller probe fails, CH375USB avoids installing normal runtime USB behavior, but the initialization path is not yet optimized to return a zero-unit/minimal-resident image.
 
-The documented storage target remains an MBR disk with a primary FAT16 partition no larger than 2 GiB. Merely accepting partition types `0Bh`/`0Ch` is not sufficient because the resident BPB representation/copy path would also need FAT32 fields.
+## Compatibility limitations
 
-Treat FAT32 as a separate feature with explicit DOS 7.x testing.
+### Typematic is software-generated
 
-### Multi-LUN
+0.5.0 adds repeat handling, but its timing is produced by the resident timer path and is not guaranteed to match every physical AT keyboard exactly.
 
-The driver currently exposes one DOS block device and uses LUN 0. A useful first extension would be to query the maximum LUN and select the first ready logical unit while still exposing one DOS drive. Multiple simultaneous DOS drive letters would require a larger architectural change.
+### Windows storage is not native USB Plug and Play
+
+A storage device detected by DOS can be carried into Windows 95 through the real-mode block-device path. Windows-side insertion/removal should not be described as native USB mass-storage hotplug.
+
+### Mouse integration depends on a DOS mouse driver
+
+The 0.5.0 architecture deliberately lets a conventional BIOS/PS2-aware DOS mouse driver such as CuteMouse own `INT 33h`. CH375USB provides the virtual BIOS PS/2 side and does not attempt to replace every mouse-driver function itself.
+
+### HID boot protocol only
+
+Keyboard and mouse handling target boot-protocol HID devices. Arbitrary HID report-descriptor devices are outside the current scope.
+
+## Experimental / deferred features
 
 ### External hub completion
 
-One external hub with up to four downstream ports is partially implemented, but the path has not yet received real-hardware validation. Low-speed downstream devices are detected but intentionally not enumerated by the current hub code.
+One external hub with limited downstream support exists, but it is not considered production-ready. It still needs systematic real-hardware validation with keyboard, mouse, storage, mixed devices and downstream hotplug.
 
-Hub support should remain experimental until tested systematically with keyboard, mouse, storage, mixed devices and downstream hotplug.
+Low-speed downstream behavior should remain conservative until validated on actual hardware.
 
-### HID compatibility / usability
+### Full DOS removable-media capability advertisement
 
-Potential improvements include:
+The block-device path provides media-change behavior, but full DOS removable-media capability advertisement and command handling remain deferred.
 
-- keyboard typematic/repeat;
-- faster or on-demand keyboard polling;
-- a more complete non-US/numpad scancode table;
-- keyboard LED `SET_REPORT` support;
-- configurable mouse mickey/sensitivity scaling.
+### FAT32
 
-These are compatibility/usability improvements, not regressions in the currently documented basic HID support.
+The documented storage target remains an MBR disk with a primary FAT16 partition no larger than 2 GiB. FAT32 needs explicit BPB/driver work and DOS 7.x testing; accepting partition type values alone would not be sufficient.
 
-## Deliberately unsupported unless a real use case appears
+### Multi-LUN
+
+The driver exposes one DOS block device and uses one active storage target. Querying/selecting other LUNs is deferred.
 
 ### Non-512-byte sector translation
 
-Non-512-byte media is detected and rejected safely. Supporting 1024/2048/4096-byte sectors would require a DOS-512-byte translation layer and read-modify-write/cache semantics for partial writes.
+Non-512-byte media is rejected safely. Translation would require a DOS-512-byte logical layer with buffering and read-modify-write semantics.
 
-Do not implement this merely because the CH375 can report other sector sizes; wait for a real target device that needs it.
+### User-visible DOS attach/detach notifications
 
-### Windows 95 HID
+Hotplug is handled internally, but there is no user-facing resident notification utility yet. If added later, console output should remain outside timer/interrupt-critical USB paths.
 
-DOS keyboard and mouse support do not automatically become Windows 95 GUI input. Proper Windows HID support would require a separate protected-mode companion driver. Keep that architectural boundary explicit.
+## Worth validating in dedicated experiments
 
-## Worth validating only in dedicated experiments
+### Windows hotplug timing and retry behavior
 
-### Phase-specific `SET_RETRY` policy
+The Windows enumerator performs one bounded state-machine action per timer tick. Retry intervals, USB speed fallback and detach/replug watchdog behavior should only be tuned with explicit regression tests on real hardware.
 
-The current `05h` bounded policy was already present in the 0.4.11 baseline; it was not introduced as a 0.4.12 regression. Built-in CH375 control commands may benefit from a finite hardware NAK-retry policy during enumeration, while HID polling must stay fast and nonblocking.
+### Windows pointer-speed behavior
 
-Change this only in a dedicated test build with clear enumeration regression tests.
+`CH375MOU.DRV` deliberately normalizes the DOS layer and lets Windows own acceleration. Control Panel behavior should be checked across several Windows 95 configurations before changing thresholds or mickey ratios again.
 
-### Defensive configuration-descriptor length check
+### BIOS PS/2 coexistence edge cases
 
-Datasheet II says built-in `GET_DESCR` reports `USB_INT_BUF_OVER` when the descriptor exceeds its 64-byte internal buffer, which already pushes CH375USB toward the manual path. Comparing `wTotalLength` with the received length would still be reasonable defensive hardening.
+The virtual BIOS mouse path first gives the physical BIOS a chance to handle PS/2 requests and mirrors configuration to the USB side. This is intended to allow physical PS/2 plus USB mouse coexistence, but unusual BIOS implementations may still need compatibility handling.
 
 ### BOT Check Condition / REQUEST SENSE handling
 
-The current BOT path recovers aggressively after command failure. Distinguishing normal SCSI Check Condition from BOT phase errors and issuing REQUEST SENSE may improve removable-media behavior, but requires explicit CSW-status handling and targeted tests.
+The current BOT path recovers aggressively. More nuanced SCSI Check Condition handling may improve removable-media behavior, but should be implemented only with targeted devices and tests.
 
 ### Private ISR stack
 
-Timer and idle paths currently use the interrupted program's stack. A private resident stack could improve robustness for applications with unusually small stacks, but it is a structural change with nesting/reentrancy implications. Do not add it without a concrete test case.
+Timer and idle paths use the interrupted program's stack. A private resident stack may improve robustness for unusually small application stacks, but it would introduce nesting/reentrancy complexity.
 
 ### Timing optimization
 
-The current software delays are conservative and CPU-dependent. They are not treated as a correctness bug because the tested Pocket386 is stable with them. If performance work becomes worthwhile, measure first and change timing separately from functional changes.
+Current CH375 delays are conservative. Optimize only after measurement and keep timing changes separate from functional changes.
 
-## Resolved in 0.4.13
+## Deliberately unsupported unless a real use case appears
 
-The following issues were fixed and regression-tested as part of the same 0.4.13 release:
+- arbitrary HID report descriptors;
+- native Windows 95 USB keyboard stack;
+- automatic translation of non-512-byte media;
+- multiple simultaneous DOS drive letters for multiple LUNs.
 
-- DOS Media Check returned the internal boolean instead of DOS `FFh` / `01h` semantics.
-- Manual control-IN assumed EP0 was always 64 bytes.
-- Resident `LODSB`/`STOSB` operations did not isolate the Direction Flag.
-- Partial DOS read/write failures left the originally requested sector count unchanged.
-- Generic CH375 enumeration could recognize MSC without initializing the BOT/SCSI path.
-- BOT `SYNCHRONIZE CACHE(10)` failure was ignored by `drv_write`.
-- `usb_busy` acquisition used a non-atomic check-then-set sequence.
-- Storage requests were not bounded against the capacity reported by the active backend.
+## Resolved before 0.5.0
+
+The 0.4.13 baseline already fixed:
+
+- DOS Media Check semantics;
+- EP0 short-packet handling;
+- Direction Flag isolation;
+- partial transfer sector counts;
+- generic MSC initialization;
+- cache-flush error propagation;
+- atomic CH375 controller ownership;
+- LBA bounds checking.
+
+See [`CHANGELOG.md`](CHANGELOG.md) for the historical details.

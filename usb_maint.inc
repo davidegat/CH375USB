@@ -1,4 +1,4 @@
-; CH375USB 0.4.13 - usb_maint.inc
+; CH375USB 0.5.0 - usb_maint.inc
 ; Author: Davide "gat" - https://github.com/davidegat
 ; Copyright (C) 2026 Davide "gat"
 ; SPDX-License-Identifier: GPL-3.0-or-later
@@ -26,7 +26,6 @@ usb_maintenance:
     cmp byte [root_link_state],0
     jne .root_connected_event
 
-
     call clear_all_slots
     mov byte [media_ready],0
     mov byte [media_changed],1
@@ -40,8 +39,6 @@ usb_maintenance:
     jmp .unlock
 
 .no_root_event:
-
-
     cmp byte [hub_slot],0FFh
     jne .scan_hub
     cmp byte [storage_slot],0FFh
@@ -50,7 +47,6 @@ usb_maintenance:
     jmp .unlock
 
 .scan_hub:
-
     call hub_scan_ports
 
 .validate_storage:
@@ -63,7 +59,6 @@ usb_maintenance:
 
     call storage_ready_check
     jnc .unlock
-
 
     mov byte [media_ready],0
     mov byte [media_changed],1
@@ -92,6 +87,61 @@ usb_maintenance:
     pop ax
     ret
 
+%if WIN_MOUSE_INT33_BRIDGE
+windows_mouse_hotplug_reenumerate:
+    push ax
+    push bx
+    push cx
+    push dx
+    push si
+    push di
+    push es
+
+    cmp byte [windows_active],1
+    jne .fail_nolock
+    cmp byte [usb_present],1
+    jne .fail_nolock
+    call usb_lock_try
+    jc .fail_nolock
+
+    mov byte [root_event],0
+    mov byte [maintenance_due],0
+    mov byte [enum_hid_only],1
+    call generic_root_enumerate
+    jc .enum_fail
+
+    mov byte [enum_hid_only],0
+    mov byte [root_event],0
+    mov byte [maintenance_due],0
+    call usb_unlock
+    pop es
+    pop di
+    pop si
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    clc
+    ret
+
+.enum_fail:
+    mov byte [enum_hid_only],0
+    mov byte [root_link_state],0
+    mov byte [root_connect_seen],0
+    mov byte [root_event],0
+    mov byte [maintenance_due],0
+    call usb_unlock
+.fail_nolock:
+    pop es
+    pop di
+    pop si
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    stc
+    ret
+%endif
 
 root_reenumerate:
     push ax
@@ -101,10 +151,8 @@ root_reenumerate:
     mov byte [root_connect_seen],0
     mov byte [enum_fail_stage],10h
 
-
     call native_storage_try
     jnc .native_ok
-
 
     call generic_root_enumerate
     jc .none
@@ -134,31 +182,19 @@ root_reenumerate:
     stc
     ret
 
-
-; Root classification tries CH375 native storage first, then generic HID/hub enumeration.
 generic_root_enumerate:
     push ax
-
-    ; Prefer the documented DS2 speed detection path.  GET_DEV_RATE itself
-    ; is not available on every CH375 revision, so the old low-speed sequence
-    ; remains a final compatibility fallback rather than the primary path.
     mov byte [usb_legacy_low_speed],0
     call ch_detect_root_speed
 
     call generic_root_enumerate_wch
     jnc .ok
 
-    ; Some devices have configuration descriptors that exceed the built-in
-    ; GET_DESCR 64-byte control buffer; retry the detected speed using the
-    ; manual control-transfer enumeration path.
     mov al,[usb_detected_speed]
     mov [usb_speed_mode],al
     call generic_root_enumerate_manual
     jnc .ok
 
-    ; GET_DEV_RATE is documented as unsupported on some chip revisions.  If
-    ; the detected result was unusable, try the opposite documented speed
-    ; before resorting to the old compatibility sequence.
     mov al,[usb_detected_speed]
     xor al,1
     mov [usb_speed_mode],al
@@ -167,8 +203,6 @@ generic_root_enumerate:
     call generic_root_enumerate_manual
     jnc .ok
 
-    ; Final compatibility attempt: reproduce the legacy 0.4.11 low-speed
-    ; sequence only after all documented paths failed.
     mov byte [usb_speed_mode],0
     mov byte [usb_legacy_low_speed],1
     call generic_root_enumerate_wch
@@ -189,18 +223,15 @@ generic_root_enumerate_wch:
     push cx
     push di
 
-
     call clear_all_slots
     call ch_root_reset
     jc .fail
-
 
     cmp byte [usb_legacy_low_speed],1
     jne .speed_ready
     call ch_set_low_speed_legacy
     call delay_10ms
 .speed_ready:
-
 
     xor ax,ax
     call clear_slot_ax
@@ -214,12 +245,10 @@ generic_root_enumerate_wch:
     mov byte [di+D_EP0],8
     mov byte [xfer_slot],0
 
-
     call ch_get_device_descriptor0
     jc .fail
     mov al,[usb_buf+7]
     mov [di+D_EP0],al
-
 
     mov bl,[next_address]
     cmp bl,127
@@ -233,11 +262,9 @@ generic_root_enumerate_wch:
     mov [di+D_ADDR],bl
     inc byte [next_address]
 
-
     mov al,[di+D_ADDR]
     call ch_select_addr
     call delay_10ms
-
 
     call ch_get_config_descriptor_builtin
     jc .fail
@@ -246,11 +273,9 @@ generic_root_enumerate_wch:
     mov al,[cfg_buf+5]
     mov [di+D_CFG],al
 
-
     xor ax,ax
     call usb_parse_config
     jc .fail
-
 
     xor ax,ax
     call slot_ptr_ax
@@ -258,10 +283,8 @@ generic_root_enumerate_wch:
     call ch_set_config_builtin
     jc .fail
 
-
     mov al,CH375_RETRY_FAST
     call ch_set_retry
-
 
     xor ax,ax
     call slot_ptr_ax
@@ -274,19 +297,19 @@ generic_root_enumerate_wch:
     call slot_ptr_ax
     test byte [di+D_CAPS],CAP_HUB
     jz .not_hub
+    cmp byte [enum_hid_only],1
+    je .not_hub
     mov byte [hub_slot],0
     xor ax,ax
     call hub_init_slot
     jc .fail
 .not_hub:
-    ; The built-in WCH enumeration path used to recognize CAP_MSC but never
-    ; initialize/mount it. Mirror the generic path and run BOT/SCSI init for
-    ; a root MSC interface. As in usb_enumerate_addr0, MSC init failure does
-    ; not invalidate an otherwise useful composite device.
     xor ax,ax
     call slot_ptr_ax
     test byte [di+D_CAPS],CAP_MSC
     jz .not_msc
+    cmp byte [enum_hid_only],1
+    je .not_msc
     xor ax,ax
     call msc_init_slot
 .not_msc:
@@ -332,13 +355,15 @@ generic_root_enumerate_manual:
     call usb_enumerate_addr0
     jc .fail
 
-
+    cmp byte [enum_hid_only],1
+    je .root_ready
     cmp byte [hub_slot],0FFh
     je .claim
     call hub_scan_ports
 
 .claim:
     call claim_first_storage
+.root_ready:
     mov byte [root_link_state],1
     mov byte [root_connect_seen],1
     mov byte [enum_fail_stage],00h
@@ -353,7 +378,6 @@ generic_root_enumerate_manual:
     pop ax
     stc
     ret
-
 
 claim_first_storage:
     push ax
