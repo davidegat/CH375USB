@@ -1,4 +1,4 @@
-; CH375USB.SYS 0.4.12-exp1 - DOS USB host driver for CH375 ISA at I/O 0260h
+; CH375USB.SYS 0.4.13 - DOS USB host driver for CH375 ISA at I/O 0260h
 ; Author: Davide "gat" - https://github.com/davidegat
 ; Copyright (C) 2026 Davide "gat"
 ; SPDX-License-Identifier: GPL-3.0-or-later
@@ -11,7 +11,7 @@ BITS 16
 CPU 386
 ORG 0
 
-%define DRIVER_VERSION      '0.4.12-exp1'
+%define DRIVER_VERSION      '0.4.13'
 %define IO_BASE             0260h
 %define DATA_PORT           IO_BASE
 %define CMD_PORT            (IO_BASE+1)
@@ -238,7 +238,7 @@ hub_ports       db 0
 hub_status      times 4 db 0
 
 
-msg_banner      db 13,10,'CH375USB 0.4.12-exp1 - DOS USB host driver for CH375 ISA',13,10,'$'
+msg_banner      db 13,10,'CH375USB 0.4.13 - DOS USB host driver for CH375 ISA',13,10,'$'
 msg_desc        db 'Storage / HID keyboard-mouse / hotplug | I/O 0260h',13,10,'$'
 msg_author      db 'Author: Davide (gat) | License: GPL-3.0-or-later',13,10,'$'
 msg_chipok      db 'Controller: CH375 detected.',13,10,'$'
@@ -430,13 +430,17 @@ drv_init:
 
 ; No USB enumeration is allowed from block-device requests; absent media must return immediately.
 drv_media_check:
-
-
-.ready:
-    mov al,[media_changed]
-    and al,1
-    mov [es:bx+14],al
+    ; DOS block-driver Media Check result byte:
+    ;   FFh = media changed, 00h = unknown, 01h = not changed.
+    ; media_changed is our internal boolean, so it must not be copied
+    ; directly: internal 1 means DOS must receive FFh, not 01h.
+    mov al,01h
+    cmp byte [media_changed],0
+    je .store_result
+    mov al,0FFh
     mov byte [media_changed],0
+.store_result:
+    mov [es:bx+14],al
     mov word [es:bx+3],ST_DONE
     ret
 
@@ -505,8 +509,16 @@ drv_read:
     ret
 .fail:
     mov byte [usb_busy],0
+    ; DOS requires request+18 to contain the number of sectors actually
+    ; transferred even when the request ends with an error. CX still includes
+    ; the sector whose read failed, so requested-CX is the completed count.
+    push cx
     call storage_fail_soft
+    pop cx
     les bx,[request_off]
+    mov ax,[es:bx+18]
+    sub ax,cx
+    mov [es:bx+18],ax
     mov word [es:bx+3],ST_DONE|ST_ERROR|ERR_READ_FAULT
     ret
 .nr:
@@ -589,8 +601,15 @@ drv_write:
     ret
 .fail:
     mov byte [usb_busy],0
+    ; Preserve DOS partial-transfer semantics on write errors too. CX includes
+    ; the failed sector, so requested-CX is the number completed successfully.
+    push cx
     call storage_fail_soft
+    pop cx
     les bx,[request_off]
+    mov ax,[es:bx+18]
+    sub ax,cx
+    mov [es:bx+18],ax
     mov word [es:bx+3],ST_DONE|ST_ERROR|ERR_WRITE_FAULT
     ret
 .nr:
