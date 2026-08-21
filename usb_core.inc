@@ -1,4 +1,4 @@
-; CH375USB 0.4.12-exp1 - usb_core.inc
+; CH375USB 0.4.13 - usb_core.inc
 ; Author: Davide "gat" - https://github.com/davidegat
 ; Copyright (C) 2026 Davide "gat"
 ; SPDX-License-Identifier: GPL-3.0-or-later
@@ -117,12 +117,24 @@ usb_control_in_slot:
     push dx
     push si
     push di
+    push bp
     push es
 
     mov byte [usb_control_wait],1
     call usb_select_slot
     jc .fail
 
+    ; Endpoint 0 max-packet size comes from bMaxPacketSize0 in the device
+    ; descriptor and is stored in D_EP0.  A packet shorter than *that* value
+    ; ends a control-IN data stage; comparing against a hard-coded 64 bytes
+    ; breaks manual enumeration for devices whose EP0 is 8/16/32 bytes.
+    xor bx,bx
+    mov bl,[di+D_EP0]
+    or bl,bl
+    jnz .ep0_mps_ready
+    mov bl,8                  ; safe pre-descriptor/default EP0 size
+.ep0_mps_ready:
+    mov bp,bx
 
     mov al,TOG_DATA0
     call ch_set_out_toggle
@@ -191,7 +203,7 @@ usb_control_in_slot:
 
 
     xor byte [xfer_toggle],040h
-    cmp bx,64
+    cmp bx,bp
     je .data_loop
     jmp .status
 
@@ -209,6 +221,7 @@ usb_control_in_slot:
     jc .fail
     mov byte [usb_control_wait],0
     pop es
+    pop bp
     pop di
     pop si
     pop dx
@@ -220,6 +233,7 @@ usb_control_in_slot:
 .fail:
     mov byte [usb_control_wait],0
     pop es
+    pop bp
     pop di
     pop si
     pop dx
