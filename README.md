@@ -2,27 +2,33 @@
 
 **CH375USB 0.4.13** is an open-source resident MS-DOS USB host driver for ISA CH375 controllers using the common parallel I/O mapping at `0260h` / `0261h`.
 
-Version 0.4.13 promotes the hardware-tested 0.4.12 experimental line and keeps the datasheet-audit improvements while adding several correctness fixes discovered during a subsequent code review.
+It provides working USB mass-storage read/write access, boot-protocol USB keyboard input, USB mouse support through the DOS mouse interface, and live DOS hotplug. Version 0.4.13 is the current hardware-tested release and incorporates the CH375 datasheet audit plus the correctness fixes validated on the Pocket386.
 
-The main 0.4.13 fixes are:
+The three main 0.4.13 improvement areas are:
 
-- correct DOS Media Check semantics after storage hotplug (`FFh` for changed media, `01h` for unchanged media);
-- use the device's real EP0 maximum packet size during manual control-IN transfers instead of assuming 64 bytes;
-- isolate the CPU Direction Flag around resident `LODSB`/`STOSB` USB packet operations;
-- report the number of sectors actually transferred when a DOS block read/write fails part-way through;
-- initialize BOT/SCSI mass storage when the CH375 built-in generic enumeration path recognizes an MSC interface.
+- **Safer DOS storage semantics:** correct media-change reporting, correct partial-transfer counts, LBA range validation, and propagation of BOT cache-flush failures.
+- **More robust USB transfers and enumeration:** real EP0 packet sizing, Direction Flag isolation for resident string operations, and proper BOT/SCSI initialization from the generic CH375 enumeration path.
+- **Serialized controller access:** CH375 ownership now uses an atomic `usb_busy` lock so timer, idle, DOS block-I/O and mouse-polling paths cannot start overlapping controller transactions.
 
-USB mass storage, USB keyboard and USB mouse were regression-tested on the target DOS hardware after these changes and all three classes worked correctly with live plug-and-play/hotplug behavior.
+See [`CHANGELOG.md`](CHANGELOG.md) for the complete 0.4.13 change list.
+
+## Table of contents
+
+- [Compatibility](#compatibility)
+- [Tested setup](#tested-setup)
+- [Files](#files)
+- [Basic DOS installation](#basic-dos-installation)
+- [DOS / Windows 95 dual boot](#dos--windows-95-dual-boot)
+- [Building](#building)
+- [Troubleshooting](#troubleshooting)
+- [Project documentation](#project-documentation)
+- [License and source provenance](#license-and-source-provenance)
 
 Author: **Davide "gat"**  
 GitHub: **https://github.com/davidegat**  
 License: **GNU GPL v3 or later (`GPL-3.0-or-later`)**
 
 CH375USB is an independent, unofficial project. It is not affiliated with or endorsed by Nanjing Qinheng Microelectronics Co., Ltd. (WCH). The names **WCH** and **CH375** are used only to identify compatible hardware. See [`NOTICE.md`](NOTICE.md).
-
-For the practical development history, failed approaches, hardware observations and lessons learned while building the driver on a real Pocket386, see [`KNOWLEDGE.md`](KNOWLEDGE.md).
-
-The driver is intended for 386-class DOS machines such as the Pocket386 and currently provides working USB mass-storage, USB keyboard and USB mouse support under DOS.
 
 ## Compatibility
 
@@ -43,22 +49,23 @@ The driver is intended for 386-class DOS machines such as the Pocket386 and curr
 
 - Read/write support in DOS.
 - Hotplug works in DOS.
-- One DOS removable drive letter is reserved by CH375USB.
-- Can also remain available in Windows 95 when CH375USB is loaded with `DEVLOAD` from `AUTOEXEC.BAT` and a flash drive is connected BEFORE starting Windows 95.
-- Windows hotplug is **not** fully supported: the USB drive must already be inserted and detected by DOS before `WIN` is started, in this case hotplug MAY HAPPEN and you may be able to remove your media and connect another.
-- If unable to use your drive plug and play (DOS), just let the system boot with the usb drive connected.
-
+- One DOS drive letter is reserved by CH375USB even when no USB storage is attached.
+- Can remain available in Windows 95 when CH375USB is loaded with `DEVLOAD` from `AUTOEXEC.BAT` and the flash drive is detected by DOS before `WIN` starts.
+- Windows hotplug is not a supported native feature. A drive already known to DOS may remain usable after Windows starts, but arbitrary Windows-side plug-and-play is not guaranteed.
+- If a particular flash drive does not enumerate reliably after insertion, cold-boot testing with the drive already connected is still a useful compatibility check.
 
 ### USB keyboard
 
 - Works in DOS.
 - Can be connected and disconnected while DOS is running.
+- Uses HID boot-protocol keyboard reports translated to the conventional PC keyboard path.
 - Does not currently work in the Windows 95 GUI.
 
-### USB HUB (up to four downstream devices)
-- Experimental feature, not complete.
-- Support present, but not tested.
-- Try at own risk.
+### USB hub
+
+- One external hub with up to four downstream ports is partially implemented.
+- Hub support remains **experimental and not yet validated on real hardware**.
+- Low-speed devices behind a hub are intentionally not advertised as supported yet.
 
 ## Tested setup
 
@@ -68,37 +75,38 @@ The driver is intended for 386-class DOS machines such as the Pocket386 and curr
 - USB flash drive: read/write and DOS hotplug working.
 - USB HID keyboard: DOS input and hotplug working.
 - USB HID mouse: DOS input and hotplug working.
-- CH375USB 0.4.13: storage, keyboard and mouse verified working with live attach/detach and plug-and-play under DOS after the 0.4.13 correctness fixes.
+- The completed 0.4.13 source was regression-tested with all three supported device classes and live attach/detach; storage, keyboard and mouse all worked correctly plug-and-play under DOS.
 
-The Pocket386 used for testing was configured with non-standard, performance-oriented BIOS settings intended to speed up the 386. These settings are more aggressive than typical defaults and may reduce system stability on some machines:
+The Pocket386 used for testing was configured with performance-oriented BIOS settings:
 
-- AT Bus Clock: PCLK2/8 (quite agggressive!)
+- AT Bus Clock: PCLK2/8
 - I/O Recovery: Disabled
 - I/O Recovery Period: 0.75 µs
 - 16Bit ISA Insert Wait: Disabled
 - Slow Refresh: 120 µs
 
-They are not required by the driver. Standard or more conservative BIOS settings should also work and may provide better stability. If you experience problems, test the driver with the BIOS defaults before changing anything else.
+These settings are **not driver requirements**. Standard or conservative BIOS settings may be more stable on another machine. If something behaves unexpectedly, test with BIOS defaults before changing low-level driver timing.
 
 ## Files
 
-- `CH375USB.SYS` — prebuilt driver binary. 
-- `CH375USB.ASM` — main driver source.
+- `CH375USB.SYS` — prebuilt driver binary, when published.
+- `CH375USB.ASM` — main resident DOS driver and block-device interface.
 - `ch375_defs.inc` — CH375/USB constants.
-- `ch375_hw.inc` — low-level CH375 I/O.
-- `ch375_native.inc` — CH375 native mass-storage path.
+- `ch375_hw.inc` — low-level CH375 I/O and transaction helpers.
+- `ch375_native.inc` — CH375 native mass-storage path and storage abstraction.
 - `usb_core.inc` — USB enumeration and control transfers.
 - `usb_msc.inc` — USB Mass Storage BOT/SCSI support.
 - `usb_hid.inc` — USB HID keyboard/mouse support.
 - `usb_hub.inc` — experimental external-hub support.
-- `usb_maint.inc` — hotplug and re-enumeration maintenance.
+- `usb_maint.inc` — hotplug and deferred re-enumeration maintenance.
 - `BUILD.BAT` / `build.sh` — NASM build scripts.
+- `CHANGELOG.md` — release history and complete change list.
+- `KNOWN_ISSUES.md` — confirmed open issues, deferred features and deliberate limitations.
+- `KNOWLEDGE.md` — concise engineering notes, architecture and lessons from real-hardware development.
+- `NOTICE.md` — project independence, provenance and external references.
 - `LICENSE` — GNU GPL v3 license text.
-- `NOTICE.md` — project independence, provenance, sources and compatibility notice.
-- `KNOWLEDGE.md` — development knowledge, experiments, pitfalls and lessons learned from real-hardware testing.
-- `KNOWN_ISSUES.md` — confirmed open issues, deferred work and review candidates still requiring targeted validation.
 
-The distributed `CH375USB.SYS`, when present, is the binary built from the source code in this project. It is **not** the vendor `CH375286.SYS` driver.
+The distributed `CH375USB.SYS`, when present, is built from this project source. It is **not** the vendor `CH375286.SYS` driver.
 
 ## Basic DOS installation
 
@@ -117,27 +125,19 @@ For USB mouse support, load a conventional DOS mouse driver after CH375USB. Exam
 C:\CTMOUSE.EXE
 ```
 
-If the machine is used mainly in DOS, this is the simplest setup and gives storage, keyboard, mouse and DOS hotplug support.
+For a machine used mainly in DOS, this is the simplest setup and provides storage, keyboard, mouse and DOS hotplug support.
 
 ## DOS / Windows 95 dual boot
 
-Loading CH375USB normally from `CONFIG.SYS` on the Windows profile can make Windows 95 slower because the real-mode storage driver remains resident during startup.
+Loading CH375USB normally from the Windows profile in `CONFIG.SYS` can make Windows 95 slower because the real-mode storage driver remains resident during startup.
 
-A practical workaround is:
+A practical tested workaround is:
 
 1. Load CH375USB normally from `CONFIG.SYS` for the DOS profile.
 2. Leave CH375USB out of the Windows profile in `CONFIG.SYS`.
 3. On the Windows profile, load CH375USB from `AUTOEXEC.BAT` with `DEVLOAD`, then start Windows with `WIN`.
 
-`DEVLOAD` is a FreeDOS utility that loads DOS device drivers from the command line and emulates a `DEVICE=` entry.
-
-DEVLOAD 3.25a:
-
-- Package page: https://www.ibiblio.org/pub/micro/pc-stuff/freedos/files/repositories/unstable/html/en/base/devload/20250409.8/index.html
-- Direct ZIP: https://www.ibiblio.org/pub/micro/pc-stuff/freedos/files/repositories/unstable/base/devload.zip
-- Source / documentation: https://github.com/FDOS/devload
-
-Only `DEVLOAD.COM` is required at runtime.
+`DEVLOAD` is a FreeDOS utility that loads DOS device drivers from the command line and emulates a `DEVICE=` entry. Only `DEVLOAD.COM` is required at runtime.
 
 ### Example `CONFIG.SYS`
 
@@ -184,13 +184,11 @@ GOTO END
 
 With this setup:
 
-- the **DOS** menu entry loads CH375USB normally and supports USB storage, keyboard, mouse and hotplug;
-- the **Windows 95** menu entry loads CH375USB with `DEVLOAD` immediately before Windows starts;
-- USB storage can remain available in Windows 95;
-- the USB drive must be inserted and detected before `WIN` starts (in this case hotplug MAY work);
-- USB storage hotplug generally does not work after Windows has started if the USB drive has not been detected before in DOS environment;
-- USB keyboard and USB mouse are NOT currently supported in the Windows 95 GUI.
-
+- the **DOS** profile provides USB storage, keyboard, mouse and hotplug;
+- the **Windows 95** profile loads CH375USB only immediately before Windows starts;
+- a USB storage device already detected by DOS can remain available in Windows 95;
+- USB keyboard and mouse are **not** supported in the Windows 95 GUI;
+- this is a DOS compatibility path, not a native Windows USB stack.
 
 ## Building
 
@@ -216,42 +214,34 @@ nasm -f bin CH375USB.ASM -o CH375USB.SYS
 
 `CH375USB.ASM` includes the `.inc` modules in the same directory.
 
-## License and source provenance
-
-CH375USB is released under **GPL-3.0-or-later**.
-
-The source code in this project is independently written. No proprietary WCH driver source code or vendor driver binary is included. Hardware interface behavior is implemented for compatibility with CH375 hardware using documented interface information and interoperability testing.
-
-See [`NOTICE.md`](NOTICE.md) for the detailed source/provenance and inspiration record, and [`KNOWLEDGE.md`](KNOWLEDGE.md) for the practical development knowledge gathered during the project.
-
 ## Troubleshooting
 
 ### Windows 95 does not see the USB drive
 
-CH375USB does not provide native Windows USB mass-storage hotplug. For the tested Windows 95 compatibility path, connect the USB flash drive **before switching on the PC** and make sure DOS sees it before Windows starts. If the drive was not detected by CH375USB before `WIN`, do not expect Windows 95 to discover it later as a native USB device.
+CH375USB does not provide native Windows USB mass-storage hotplug. Connect the USB flash drive before starting Windows and make sure DOS sees it before `WIN`. If the drive was not detected by CH375USB first, do not expect Windows 95 to discover it later as a native USB device.
 
 ### Windows 95 reports MS-DOS compatibility mode
 
-Do not load CH375USB from the Windows profile in `CONFIG.SYS`. Instead, leave the Windows `CONFIG.SYS` section without CH375USB and load the driver from `AUTOEXEC.BAT` with `DEVLOAD` immediately before starting Windows:
+Do not load CH375USB from the Windows profile in `CONFIG.SYS`. Instead load it from `AUTOEXEC.BAT` with `DEVLOAD` immediately before starting Windows:
 
 ```dos
 C:\DEVLOAD\DEVLOAD.COM C:\CH375USB.SYS
 WIN
 ```
 
-The USB drive should already be connected and detected before `WIN` is executed. This is the tested workaround for using the real-mode storage driver with Windows 95; it is not a native Windows USB driver.
+The USB drive should already be connected and visible in DOS. This is a real-mode compatibility workaround, not native Windows USB support.
 
 ### Mouse does not work or suddenly stops working
 
-Some old/recreated 386-class systems, including the Pocket386 used during development, have shown BIOS settings occasionally reverting or not being retained reliably. If the USB mouse does not work, or previously worked and then stops, enter the BIOS and check that **mouse support is enabled**. Check it again before debugging CH375USB: on this hardware the BIOS mouse option has been observed to become disabled unexpectedly.
+Some old/recreated 386-class systems, including the Pocket386 used during development, have shown BIOS settings occasionally reverting. If the USB mouse previously worked and then appears completely dead, enter the BIOS and verify that **mouse support is enabled** before debugging CH375USB.
 
 ### USB flash drive is not recognized
 
-For maximum DOS/CH375 compatibility, use an **MBR (MS-DOS) partition table** with a **single primary FAT16 partition no larger than 2 GiB**. The USB device may physically be larger; the recommended DOS-compatible partition should be 2 GiB or smaller. CH375USB 0.4.13 currently accepts **512-byte physical sectors** on the native storage path.
+For maximum DOS/CH375 compatibility, use an **MBR (MS-DOS) partition table** with a **single primary FAT16 partition no larger than 2 GiB**. The physical USB device can be larger; the DOS-compatible partition should be 2 GiB or smaller. CH375USB 0.4.13 currently supports **512-byte storage sectors** and safely rejects unsupported sector sizes.
 
-On a Windows PC, one example is to use Disk Management: delete the existing partitions on the USB drive, initialize/use it as **MBR**, create a primary partition of **2 GB or less**, and format that partition as **FAT** (FAT16). Be absolutely sure you selected the correct removable drive before deleting partitions.
+On Windows, use Disk Management to select the correct removable drive, remove the existing layout if necessary, use **MBR**, create a primary partition of **2 GB or less**, and format it as **FAT** (FAT16).
 
-On Linux, for example, replacing `/dev/sdX` with the **correct USB device**:
+On Linux, replacing `/dev/sdX` with the **correct USB device**:
 
 ```sh
 sudo umount /dev/sdX?* 2>/dev/null
@@ -263,18 +253,32 @@ sudo mkfs.fat -F 16 -n DOSUSB /dev/sdX1
 
 **Warning:** these commands destroy the existing partition table and data on the selected device. Verify `/dev/sdX` before running them.
 
-If one flash drive still fails, try another, preferably an older/simple USB 2.0-era device. Flash-drive controller compatibility can vary on retro USB host hardware.
+If one flash drive still fails, try another, preferably an older/simple USB 2.0-era device. Flash-controller compatibility varies on retro USB host hardware.
 
 ### USB hub support
 
-Hub support is **experimental and untested**. The developer has started implementing support for one external hub with up to four downstream devices, but no real-hardware hub validation has been completed yet. For now, do not rely on it: connect the keyboard, mouse or storage device directly to the CH375 USB port.
+Hub support remains experimental and has not yet received real-hardware validation. For reliable use, connect storage, keyboard or mouse directly to the CH375 USB port.
 
 ### Windows keyboard and mouse support
 
-CH375USB is primarily a **DOS driver**, not a native Windows USB driver. The Windows 95 exception is the limited USB-storage compatibility path described above, where a DOS-detected drive can remain available after Windows starts.
-
-USB keyboard and USB mouse support currently work in DOS only. Windows 95 does not recognize them through CH375USB in the GUI. Proper Windows input support would require a separate protected-mode Windows companion driver; such a component may be developed in the future.
+CH375USB is primarily a **DOS driver**. USB keyboard and mouse support work in DOS only. Proper Windows 95 GUI input would require a separate protected-mode companion driver.
 
 ### Windows 3.1 / Windows for Workgroups 3.11
 
-CH375USB has **not been tested at all** under Windows 3.1 or Windows for Workgroups 3.11. Current Windows-related testing and documentation apply only to Windows 95. No compatibility claim is made for Windows 3.x.
+CH375USB has **not been tested** under Windows 3.1 or Windows for Workgroups 3.11. No Windows 3.x compatibility claim is made.
+
+## Project documentation
+
+- [`CHANGELOG.md`](CHANGELOG.md) — complete release history and fixes.
+- [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md) — current open issues and intentionally deferred work.
+- [`KNOWLEDGE.md`](KNOWLEDGE.md) — architecture, debugging rules and lessons learned on real hardware.
+- [`DATASHEET-AUDIT.md`](DATASHEET-AUDIT.md) — focused notes from the CH375 Datasheet I/II audit that led to the 0.4.12 low-level changes retained by 0.4.13.
+- [`NOTICE.md`](NOTICE.md) — project independence and source/reference provenance.
+
+## License and source provenance
+
+CH375USB is released under **GPL-3.0-or-later**.
+
+The source code in this project is independently written. No proprietary WCH driver source code or vendor driver binary is included. Hardware interface behavior is implemented for compatibility with CH375 hardware using documented interface information and interoperability testing.
+
+See [`NOTICE.md`](NOTICE.md) for the detailed provenance/reference record.
