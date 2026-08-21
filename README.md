@@ -373,12 +373,12 @@ It also points `WLINK_LNK` at `C:\OPENWAT\BINW\WLINK.LNK` when that file is pres
 
 #### NASM for DOS
 
-Use a **native DOS NASM executable**, not the Win32/Win64 package. The recommended known DOS distribution for this build is NASM **2.16.03**:
+Use a **native DOS NASM executable**, not the Win32/Win64 package. The documented DOS package for this build is NASM **3.01** from the FreeDOS repository:
 
-- NASM 2.16.03 DOS release directory: https://www.nasm.us/pub/nasm/releasebuilds/2.16.03/dos/
+- FreeDOS NASM 3.01 package page (platform: DOS): https://www.ibiblio.org/pub/micro/pc-stuff/freedos/files/repositories/latest/html/en/devel/nasm/20251011.1/index.html
 - NASM project/download information: https://www.nasm.us/
 
-Extract/copy the DOS `NASM.EXE` so that the final path is:
+The FreeDOS package page provides the DOS `nasm.zip`. Extract/copy `NASM.EXE` so that the final path is:
 
 ```text
 C:\NASM\NASM.EXE
