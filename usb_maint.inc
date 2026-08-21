@@ -15,9 +15,8 @@ usb_maintenance:
 
     cmp byte [usb_present],1
     jne .done
-    cmp byte [usb_busy],0
-    jne .done
-    mov byte [usb_busy],1
+    call usb_lock_try
+    jc .done
 
     cmp byte [root_event],1
     jne .no_root_event
@@ -82,7 +81,7 @@ usb_maintenance:
     call claim_first_storage
 
 .unlock:
-    mov byte [usb_busy],0
+    call usb_unlock
 .done:
     pop es
     pop di
