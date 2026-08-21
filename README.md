@@ -2,7 +2,7 @@
 
 **CH375USB 0.4.13** is an open-source resident MS-DOS USB host driver for ISA CH375 controllers using the common parallel I/O mapping at `0260h` / `0261h`.
 
-It provides working USB mass-storage read/write access, boot-protocol USB keyboard input, USB mouse support through the DOS mouse interface, and live DOS hotplug. Version 0.4.13 is the current hardware-tested release and incorporates the CH375 datasheet audit plus the correctness fixes validated on the Pocket386.
+It provides working USB mass-storage read/write access, boot-protocol USB keyboard input, USB mouse support through the DOS mouse interface, and live DOS hotplug. Version 0.4.13 is the current hardware-tested release validated on the Pocket386.
 
 The three main 0.4.13 improvement areas are:
 
