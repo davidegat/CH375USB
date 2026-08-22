@@ -146,7 +146,7 @@ For mouse changes, preserve this order:
 4. PS/2 + USB simultaneously.
 5. EDIT: cursor plus movement/buttons with PS/2 and USB.
 6. DOS Shell (`DOSSHELL`) with PS/2 and USB.
-7. Real DOS games with both physical PS/2 and USB mouse input: The Secret of Monkey Island, The Games: Winter Challenge, Wolfenstein 3D, Ken's Labyrinth, Hexxagon, Cannon Fodder, Battle Chess, Tyrian 2000, XQuest 2, and Warcraft: Orcs & Humans.
+7. Real DOS games with both physical PS/2 and USB mouse input: The Secret of Monkey Island, The Games: Winter Challenge, Wolfenstein 3D, Ken's Labyrinth, Hexxagon, Cannon Fodder, Battle Chess, Tyrian 2000, XQuest 2, Warcraft: Orcs & Humans, and Lemmings.
 8. Windows 95 physical PS/2.
 9. Windows 95 USB present at startup.
 10. Windows 95 first USB hotplug.
