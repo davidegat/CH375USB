@@ -52,6 +52,25 @@ DOS storage hotplug is supported, but removal is not safe while files are open o
 
 CH375USB synchronizes its own completed writes to the storage backend, but it cannot flush data that DOS or another cache has not yet passed to the driver.
 
+### FAT16 geometry compatibility
+
+The old documentation allowed a FAT16 partition almost 2 GiB in size and let Linux `mkfs.fat` select the remaining geometry automatically. On the tested Pocket386 workflow, that near-limit layout became unreliable once the filesystem contained many files/directories and could then be reported as corrupted across Linux, DOS and Windows.
+
+The currently validated layout is deliberately more conservative:
+
+- MBR partition table;
+- one 1 GiB primary FAT16 partition;
+- 512-byte logical sectors;
+- 32 KiB clusters (64 sectors/cluster);
+- two FAT copies;
+- 512 root-directory entries.
+
+This geometry was tested with roughly 300 files and multiple DOS software trees without reproducing the earlier corruption. The result is treated as a compatibility finding, not as evidence that CH375USB itself corrupts larger valid FAT16 volumes or that every FAT16 volume above 1 GiB is invalid.
+
+### DOS partitioning through CH375USB
+
+CH375USB exposes the mounted storage as a DOS block-device drive letter, not as a BIOS `INT 13h` hard disk. Therefore DOS `FDISK` is not the documented way to create the MBR/partition through CH375USB. Prepare the 1 GiB primary partition using Linux or another environment with direct access to the physical USB disk. Once the partition exists, DOS `FORMAT <drive>: /U /V:DOSUSB` may be used to recreate the FAT filesystem on the logical volume if that DOS FORMAT build accepts the installable block device.
+
 ### FAT32
 
 The documented storage target remains primarily MBR + FAT12/FAT16. FAT32 requires explicit BPB/driver work and testing.
@@ -92,4 +111,4 @@ Third-party CMOS save/restore utilities and modified Pocket386 BIOS images are o
 
 ## Validated 0.5.1 baseline that should not be casually disturbed
 
-On the tested Pocket386, the following now work together: physical PS/2 in DOS and Windows, USB mouse in DOS, USB first-hotplug in Windows, simultaneous PS/2 + USB mouse input, DOS text cursor in EDIT, and real-program/game mouse operation with both PS/2 and USB in DOSSHELL, The Secret of Monkey Island, The Games: Winter Challenge, Wolfenstein 3D, Ken's Labyrinth, Hexxagon, Cannon Fodder, Battle Chess, Tyrian 2000, XQuest 2, Warcraft: Orcs & Humans, and Lemmings. Future hotplug or compatibility fixes should preserve this matrix.
+On the tested Pocket386, the following now work together: physical PS/2 in DOS and Windows, USB mouse in DOS, USB first-hotplug in Windows, simultaneous PS/2 + USB mouse input, DOS text cursor in EDIT, and real-program/game mouse operation with both PS/2 and USB in DOSSHELL, QBasic 4.50, Norton 4.55, FastTracker II, The Secret of Monkey Island, Monkey Island 2, The Games: Winter Challenge, Wolfenstein 3D, Ken's Labyrinth, Hexxagon, Cannon Fodder, Battle Chess, Tyrian 2000, XQuest 2, Warcraft: Orcs & Humans, Lemmings, SimEarth: The Living Planet, and Sid Meier's Civilization 474.03. The validated storage baseline is the conservative 1 GiB FAT16 geometry documented above, stress-tested with roughly 300 files. Future hotplug, compatibility or storage changes should preserve this matrix.
