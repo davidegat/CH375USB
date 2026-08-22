@@ -50,6 +50,7 @@ Verified on Pocket386:
 - Tyrian 2000 with PS/2 and USB mouse input.
 - XQuest 2 with PS/2 and USB mouse input.
 - Warcraft: Orcs & Humans with PS/2 and USB mouse input.
+- Lemmings with PS/2 and USB mouse input.
 - Windows 95 PS/2 operation.
 - Windows 95 USB mouse when present at startup.
 - Windows 95 first USB mouse hotplug after startup.
