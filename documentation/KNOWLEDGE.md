@@ -53,7 +53,9 @@ PS/2 and USB retain separate button state. The logical `INT 33h` button bitmap i
 
 The resident core implements the conventional services required by tested DOS software and `CH375MOU.DRV`, including reset/status/position, position ranges, press/release counters, motion counters, callbacks, mickey ratios, text-cursor masks, enable/disable and version/capability queries.
 
-The reset function reports a three-button mouse (`AX=FFFFh`, `BX=3`).
+The reset function reports a three-button mouse (`AX=FFFFh`, `BX=3`). `INT 33h/0000` is treated as a hardware lifecycle reset as well as a logical-state reset: after clearing the common state, CH375USB re-arms the already-probed BIOS PS/2 C207 callback. `INT 33h/0020` performs the same PS/2 re-arm when the driver is re-enabled. This is required for compatibility with DOS software that assumes reset/enable restores the physical mouse backend.
+
+`INT 33h/0004` (set position) and range changes through `0007h/0008h` clear the fractional mickey-to-pixel accumulators. A cursor warp starts a new positioning epoch; retaining pre-warp fractional movement can otherwise create residual movement in software that repeatedly recenters the pointer.
 
 Unsupported functions must fail safely; do not chain to a null historical vector.
 
@@ -134,7 +136,7 @@ For mouse changes, preserve this order:
 3. USB first hotplug in DOS: `MTEST` movement/buttons.
 4. PS/2 + USB simultaneously.
 5. EDIT: cursor plus movement/buttons with PS/2 and USB.
-6. At least one real DOS game; Monkey Island is a validated reference.
+6. Real DOS games: Monkey Island and Winter Challenge (Accolade), with both physical PS/2 and USB mouse input.
 7. Windows 95 physical PS/2.
 8. Windows 95 USB present at startup.
 9. Windows 95 first USB hotplug.

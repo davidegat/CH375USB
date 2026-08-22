@@ -26,6 +26,8 @@ All notable CH375USB changes are recorded here.
 - Windows 95 mouse support through `CH375MOU.DRV` no longer requires CuteMouse.
 - DOS cursor rendering occurs only when requested by an application; there is no always-visible driver cursor at the DOS prompt.
 - Build scripts now produce `CH375USB.SYS`, `CH375MOU.DRV`, `CH375MOU.MAP`, and `MTEST.COM`.
+- `INT 33h/0000` reset and `INT 33h/0020` enable now re-arm the already-probed physical BIOS PS/2 backend, matching conventional DOS mouse-driver lifecycle semantics.
+- `INT 33h/0004`, `0007` and `0008` now discard fractional mickey-to-pixel remainders after cursor warps/range changes, preventing stale sub-pixel movement from leaking into software that repeatedly recenters the pointer.
 
 ### Hardware validation
 
@@ -35,7 +37,8 @@ Verified on Pocket386:
 - DOS USB hotplug movement/buttons through `MTEST`.
 - DOS PS/2 + USB simultaneous operation.
 - EDIT with PS/2 and USB, including the requested software cursor.
-- Monkey Island with PS/2, including cursor/input operation.
+- Monkey Island with PS/2 and USB mouse input.
+- Winter Challenge (Accolade) with PS/2 and USB mouse input.
 - Windows 95 PS/2 operation.
 - Windows 95 USB mouse when present at startup.
 - Windows 95 first USB mouse hotplug after startup.

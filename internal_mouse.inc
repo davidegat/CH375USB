@@ -882,6 +882,17 @@ mouse_int33:
 
 .reset:
     call mouse_internal_soft_reset
+%if INTERNAL_MOUSE_PHYSICAL_PS2
+    ; INT33/0000 is a hardware reset/enable operation, not just a logical
+    ; state reset. Microsoft-style drivers and CuteMouse re-enable their
+    ; physical backend here. Re-own BIOS C207 so applications which reset
+    ; the mouse cannot leave the physical PS/2 path detached while the
+    ; direct USB backend continues to work.
+    cmp byte [cs:mouse_ps2_available],1
+    jne .reset_ps2_done
+    call mouse_ps2_bios_rearm
+.reset_ps2_done:
+%endif
     mov ax,0FFFFh
     mov bx,3
     iret
@@ -911,6 +922,12 @@ mouse_int33:
     iret
 
 .setpos:
+    ; A cursor warp starts a new positioning epoch. Discard fractional
+    ; mickey-to-pixel remainders exactly as conventional DOS mouse drivers
+    ; do; otherwise software which repeatedly recenters the cursor can get
+    ; an immediate residual movement after every INT33/0004 call.
+    mov word [cs:mouse_accum_dx],0
+    mov word [cs:mouse_accum_dy],0
     mov [cs:mouse_x],cx
     mov [cs:mouse_y],dx
     call mouse_clamp_position
@@ -987,6 +1004,8 @@ mouse_int33:
     mov [cs:mouse_min_x],cx
     mov [cs:mouse_max_x],dx
     call mouse_clamp_position
+    mov word [cs:mouse_accum_dx],0
+    mov word [cs:mouse_accum_dy],0
     call mouse_text_cursor_refresh
     iret
 
@@ -998,6 +1017,8 @@ mouse_int33:
     mov [cs:mouse_min_y],cx
     mov [cs:mouse_max_y],dx
     call mouse_clamp_position
+    mov word [cs:mouse_accum_dx],0
+    mov word [cs:mouse_accum_dy],0
     call mouse_text_cursor_refresh
     iret
 
@@ -1125,6 +1146,14 @@ mouse_int33:
 
 .enable:
     mov byte [cs:mouse_driver_enabled],1
+%if INTERNAL_MOUSE_PHYSICAL_PS2
+    ; INT33/0020 restores the physical backend as well as the logical
+    ; enabled flag. USB is direct and needs no equivalent re-arm.
+    cmp byte [cs:mouse_ps2_available],1
+    jne .enable_ps2_done
+    call mouse_ps2_bios_rearm
+.enable_ps2_done:
+%endif
     call mouse_text_cursor_refresh
     mov ax,0020h
     iret

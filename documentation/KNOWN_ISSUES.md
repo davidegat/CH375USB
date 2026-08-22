@@ -71,7 +71,7 @@ Third-party CMOS save/restore utilities and modified Pocket386 BIOS images are o
 ## Deferred engineering work
 
 - Fix Windows 95 USB mouse detach/replug state reset.
-- Broader DOS game/application `INT 33h` compatibility testing.
+- Broader DOS game/application `INT 33h` compatibility testing beyond the current EDIT, Monkey Island and Winter Challenge validation set.
 - Optional complete graphics-cursor-mask renderer.
 - Native Windows 95 USB keyboard bridge.
 - External-hub completion.
@@ -84,4 +84,4 @@ Third-party CMOS save/restore utilities and modified Pocket386 BIOS images are o
 
 ## Validated 0.5.1 baseline that should not be casually disturbed
 
-On the tested Pocket386, the following now work together: physical PS/2 in DOS and Windows, USB mouse in DOS, USB first-hotplug in Windows, simultaneous PS/2 + USB mouse input, DOS text cursor in EDIT, and real-game mouse/cursor operation in Monkey Island. Future hotplug fixes should preserve this matrix.
+On the tested Pocket386, the following now work together: physical PS/2 in DOS and Windows, USB mouse in DOS, USB first-hotplug in Windows, simultaneous PS/2 + USB mouse input, DOS text cursor in EDIT, and real-game mouse operation in Monkey Island and Winter Challenge with both PS/2 and USB mice. Future hotplug fixes should preserve this matrix.
