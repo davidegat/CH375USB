@@ -7,115 +7,64 @@ CH375USB is an independent, unofficial open-source project and is not affiliated
 
 The names **WCH**, **WinChipHead**, and **CH375** are used solely to identify hardware, documentation, and historical software with which this project interoperates.
 
-CH375USB is distributed under the GNU General Public License version 3 or, at your option, any later version. See [`LICENSE`](../LICENSE).
+CH375USB is distributed under the GNU General Public License version 3 or, at your option, any later version. See [`../LICENSE`](../LICENSE).
 
 ## Source-code provenance
 
-The source code in this repository is independently written. The project does **not** contain proprietary WCH driver source code, the vendor `CH375DOS.SYS`, or FreddyV's `CH375286.SYS` binary/source.
+Most CH375USB source is independently written around public CH375, USB, DOS, BIOS and Windows interfaces. The repository does not contain proprietary WCH driver source code or FreddyV's `CH375286.SYS` binary/source.
 
-No substantial third-party source-code block has been copied or transliterated into CH375USB. Standard USB constants, CH375 command values, DOS/BIOS interrupt numbers, Win16 ABI structures, SCSI command values and other protocol/interface facts necessarily match the public interfaces they implement.
+### Internal mouse driver and CuteMouse
 
-Version 0.5.0 adds two independently written interoperability components:
+CH375USB 0.5.1 incorporates an internal DOS `INT 33h` mouse driver. The implementation in `internal_mouse.inc` was developed with direct study/adaptation of relevant behavior and code concepts from **CuteMouse / CTMouse 2.1 beta4**, principally its BIOS PS/2 callback handling, packet decoding, conventional `INT 33h` semantics, button/motion bookkeeping and compatibility defaults.
 
-- a BIOS PS/2 pointing-device layer based on the public `INT 15h AH=C2h` interface;
-- `CH375MOU.DRV`, a Win16 mouse-driver bridge based on the documented Windows mouse-driver ABI and the conventional DOS `INT 33h` mouse API.
+Reference examined during development:
 
-The 0.5.0 BIOS PS/2 code intentionally does **not** contain or translate Bret Johnson's USBMOUSE source code. Bret Johnson's work was consulted as historical/practical background for DOS USB mouse behavior and staged polling ideas, but CH375USB uses its own CH375-specific implementation and architecture.
+- CuteMouse / CTMouse 2.1 beta4
+- Copyright (c) 1997-2002 Nagy Daniel
+- BIOS wheel-mouse work credited in CuteMouse to Eric Auer / Konstantin Koll
+- source repository examined: `https://github.com/davidebreso/ctmouse`
+- principal source: `ctmouse.asm`
+- license: **GPL-2.0-or-later**
 
-One hardware procedure remains explicitly attributed: the legacy CH375B low-speed setup sequence using command/data values `0Bh -> 17h -> D8h` was learned from W.ch/WinChipHead-derived CH375 USB-host examples, including Makeblock `MeUSBHost` and related Arduino material. CH375USB implements the sequence independently in NASM; the external C/C++ source itself was not copied.
+CuteMouse's GPL-2.0-or-later terms permit the adapted/combined work to be distributed under CH375USB's GPL-3.0-or-later license. Relevant copyright/license notices are preserved here and in the source comments.
 
-The low-level CH375 audit was checked against WCH's **CH375 Datasheet (I), Version 4** (`CH375DS1.PDF`) and **CH375 Datasheet (II): USB Basic Transmission Commands, Version 4** (`CH375DS2.PDF`). Those documents are used as hardware/protocol specifications, not source-code dependencies.
+CH375USB does **not** embed the CuteMouse TSR loader, command-line parser, serial/UART backend, relocation machinery or its `asmlib` framework. CuteMouse is **not a runtime dependency** of CH375USB 0.5.1 and is not bundled as `CTMOUSE.EXE`.
 
-## Binary distribution
+### CH375 / USB references
 
-Prebuilt 0.5.0 binaries are published under [`../binary/`](../binary/):
+Implementation work has been informed by public material including:
 
-- [`CH375USB.SYS`](../binary/CH375USB.SYS)
-- [`CH375MOU.DRV`](../binary/CH375MOU.DRV)
+- WCH CH375 Datasheet (I), Version 4;
+- WCH CH375 Datasheet (II): USB Basic Transmission Commands, Version 4;
+- historical W.ch/WinChipHead CH375 USB-host examples;
+- FreddyV's CH375286 work as a practical interoperability reference;
+- open-source CH375 host examples including xeecos/CH375-Keyboard-Arduino and Makeblock/MeUSBHost;
+- USB 2.0, HID 1.11/HID Usage Tables, USB Mass Storage Bulk-Only Transport and SCSI block-command conventions;
+- public DOS `INT 33h`, BIOS `INT 15h/AH=C2h`, Windows enhanced-mode and Win16 mouse-driver interface documentation.
 
-They are build outputs of this project and must not be confused with vendor or third-party binaries.
+One legacy CH375B low-speed setup procedure using the command/data sequence `0Bh -> 17h -> D8h` was learned from W.ch/WinChipHead-derived examples including Makeblock material; CH375USB implements the procedure independently in NASM.
 
-## Sources, prior work and inspirations
+### Other DOS USB references
 
-The following material was consulted during development. Inclusion here does not imply that its source code is incorporated into CH375USB.
+- crazii / USBDDOS — architectural/reference material for DOS USB/HID/storage design.
+- Bret Johnson / USBMOUSE — historical/practical reference for DOS USB mouse behavior and nonblocking/staged ideas. CH375USB does not redistribute USBMOUSE source.
 
-### WCH / WinChipHead documentation and examples
+### Toolchains and external utilities
 
-- **Nanjing Qinheng Microelectronics (WCH) — CH375 Datasheet (I), Version 4.** Defines the CH375 parallel host interface, command/data timing, host modes, interrupt/status behavior and native mass-storage commands.
-- **Nanjing Qinheng Microelectronics (WCH) — CH375 Datasheet (II): USB Basic Transmission Commands, Version 4.** Defines additional host-transaction commands and external-firmware transfer behavior including speed, retry, token and data-buffer operations.
-- Historical **W.ch / WinChipHead USB 1.1 Host Examples for CH375** were used as behavioral references for command sequencing and legacy low-speed handling.
-- Historical WCH DOS drivers were treated only as behavioral references for expected CH375 storage operation. No vendor driver binary/source is redistributed.
+Open Watcom V2 and NASM are build tools, not code dependencies. FreeDOS `DEVLOAD` is an optional external utility useful for the documented Windows boot-profile workflow and is not part of CH375USB.
 
-### FreddyV — CH375286.SYS
+### Pocket386 community references
 
-FreddyV's CH375286.SYS work was an important practical reference for ISA CH375 operation on older x86 systems, especially around port selection, timing, performance and compatibility. CH375USB does not contain FreddyV's binary/source and was not produced by translating that driver.
-
-### Open-source CH375 host examples
-
-- **xeecos / CH375-Keyboard-Arduino** — consulted as a practical CH375 HID-host reference.
-- **Makeblock / MeUSBHost** — consulted for CH375 sequencing and the historical W.ch-derived low-speed procedure.
-
-No source block from these projects is included in CH375USB.
-
-### DOS USB and mouse implementations
-
-- **crazii / USBDDOS** — consulted as an independent DOS USB stack and architectural reference for DOS USB/HID/storage design questions.
-- **CuteMouse / CTMOUSE** — the DOS mouse driver used as the interoperability target and **runtime dependency of the tested/reference CH375USB 0.5.0 mouse stack**. CH375USB does not distribute or incorporate CuteMouse source code. The reference package/project is available through FreeDOS and the CuteMouse SourceForge project.
-- **Bret Johnson / USBMOUSE** — consulted as historical/practical background for DOS USB mouse support and nonblocking/staged behavior. CH375USB's BIOS PS/2 and CH375 transport code are independent implementations.
-
-### USB and storage specifications
-
-Implementation work was also informed by public protocol specifications, principally:
-
-- USB 2.0 Specification;
-- USB HID 1.11 / HID Usage Tables;
-- USB Mass Storage Class Bulk-Only Transport;
-- SCSI block-command conventions such as TEST UNIT READY, READ CAPACITY(10), READ(10), WRITE(10) and SYNCHRONIZE CACHE.
-
-These are protocol specifications, not source-code dependencies.
-
-### DOS, BIOS and Windows interface references
-
-Public references were consulted for:
-
-- DOS `INT 33h` mouse services;
-- BIOS PS/2 pointing-device services via `INT 15h AH=C2h`;
-- Windows enhanced-mode notifications through `INT 2Fh`;
-- the Win16 mouse-driver ABI and Windows NE driver/DLL format;
-- historical Windows 95 VMOUSE/VKD/VxD behavior while assessing architectural boundaries.
-
-These interface descriptions were used to build interoperable software, not to copy proprietary implementation code.
-
-### FreeDOS DEVLOAD
-
-FreeDOS `DEVLOAD` is not part of CH375USB. It remains useful for the documented DOS-to-Windows boot profile in which `CH375USB.SYS` is loaded immediately before `WIN`.
-
-### Pocket386 hardware/community references
-
-Pocket386-specific behavior has also been informed by community reports and real-hardware observation. In particular, the machine does not use a separate coin-cell-style CMOS backup battery; BIOS/RTC retention depends on the main system battery. A complete discharge can therefore restore BIOS defaults, including disabling mouse support and re-enabling the floppy/FDC configuration.
-
-Community discussions have also published modified Pocket386 BIOS defaults intended to keep mouse support enabled and the unused floppy/FDC setting disabled. These third-party firmware modifications are **not part of CH375USB, have not been tested by this project, and are not endorsed by this project**. CH375USB currently provides no verified Pocket386 BIOS flashing procedure.
-
-References include:
-
-- https://forum.vcfed.org/index.php?threads/pocket-386.1247640/page-6
-- https://www.vogons.org/viewtopic.php?start=100&t=99751
-
-### Community research and real-hardware reports
-
-Historical VOGONS and VCFed discussions about CH375 ISA cards, Pocket386/Book8088-style systems, FreddyV's CH375 driver and CH375 external-firmware mode were used as experimental clues. Claims affecting CH375USB behavior were treated cautiously and, where possible, checked against documentation and real hardware.
+Pocket386 behavior has also been informed by real-hardware testing and public community reports. Third-party modified BIOS images and CMOS save/restore utilities are not part of CH375USB and are not endorsed or supported by the project.
 
 ### AI-assisted development and review
 
-AI tools were used during iterative design, code generation/review, debugging and documentation.
+AI tools were used during iterative design, code generation/review, debugging hypotheses and documentation. Working behavior is established by source review, public specifications/interfaces and repeated real-hardware testing rather than by AI output alone.
 
-- **OpenAI ChatGPT** assisted with iterative design, implementation review, debugging hypotheses and documentation while the driver was repeatedly tested on real Pocket386 hardware.
-- **Anthropic Claude** was used as an independent code-review pass on an early prototype. In particular, that review identified that an early experimental `.SYS` skeleton lacked a valid DOS block-device header, real Strategy/Interrupt request handling and a complete block-device implementation; those findings influenced the subsequent redesign.
+## Binary distribution
 
-Claude output is not included as third-party source code in this repository. AI suggestions from either tool were treated as hypotheses and engineering assistance, not as authoritative hardware documentation; working behavior is established by source review, public interface specifications and real-hardware testing.
+Published `binary/CH375USB.SYS`, `binary/CH375MOU.DRV` and `binary/MTEST.COM` are build outputs of this project. They must correspond to the same source revision as the release and must not be confused with vendor or third-party drivers.
 
 ## Independence statement
 
-CH375USB is best described as an **independent interoperable implementation** informed by public hardware/protocol documentation, public DOS/BIOS/Windows interfaces, prior community work, historical driver behavior and real-hardware experimentation.
-
-Where a specific externally learned hardware procedure or architectural inspiration is relevant, it is identified above. No proprietary WCH driver source code, FreddyV driver code, CuteMouse source, Bret Johnson USBMOUSE source, or other third-party source file is redistributed as part of CH375USB.
+CH375USB is an interoperable open-source implementation informed by public hardware/protocol documentation, public DOS/BIOS/Windows interfaces, prior community work and real-hardware experimentation. Third-party source-derived portions are identified above with their applicable licensing/provenance.

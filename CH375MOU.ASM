@@ -1,4 +1,4 @@
-; CH375MOU.DRV - minimal Win16 mouse driver bridge for CH375USB/CuteMouse
+; CH375MOU.DRV - minimal Win16 mouse driver bridge for CH375USB internal INT33
 ; Independent implementation using the documented Windows mouse-driver ABI
 ; and documented DOS INT 33h mouse callback interface.
 ;
@@ -6,10 +6,10 @@
 ; SPDX-License-Identifier: GPL-3.0-or-later
 ;
 ; Build with Open Watcom WASM + WLINK (see build.sh).
-; Windows hotplug remains incremental inside CH375USB.SYS; pointer-speed
-; handling is normalized so Windows owns acceleration. A superseded protected-
-; mode idle/DPMI helper remains assembled only as inert compatibility code and
-; is not installed by Enable().
+; Windows hotplug remains incremental inside the unified CH375USB.SYS;
+; pointer-speed handling is normalized so Windows owns acceleration.
+; The older protected-mode idle/DPMI bridge remains assembled only as inert
+; compatibility code and is no longer installed by Enable().
 
 .286
 
@@ -33,7 +33,7 @@ idle_call_busy  DB 0
 
 ; DPMI 0.9 real-mode call structure (52 bytes) for INT 31h AX=0300h.
 ; We use it to simulate a real-mode INT 2Fh so the protected-mode mouse driver
-; can explicitly reach the resident CH375USB.SYS multiplex handler.
+; can explicitly reach the resident CH375W.SYS multiplex handler.
 rmcs            DB 52 DUP (0)
 DATASEG ENDS
 
@@ -127,8 +127,8 @@ Inquire ENDP
 ; ---------------------------------------------------------------------------
 ; VOID FAR PASCAL Enable(lpEventProc)
 ; Registers an INT 33h function 0Ch callback with the existing DOS mouse
-; driver. CH375USB.SYS keeps the USB mouse path alive while Windows runs;
-; CuteMouse then delivers normal INT 33h callbacks here.
+; driver. CH375W.SYS keeps the USB mouse path alive while Windows runs;
+; CH375USB now delivers the normal INT 33h callbacks directly.
 ; ---------------------------------------------------------------------------
 Enable PROC FAR
     push bp
@@ -174,11 +174,11 @@ Enable PROC FAR
 
     ; Windows 95 expects the Windows mouse driver to deliver relative motion
     ; and then applies its own Control Panel acceleration.  Because this bridge
-    ; uses CuteMouse's processed CX/DX coordinates, make the DOS layer neutral
+    ; uses the resident driver's processed CX/DX coordinates, make the DOS layer neutral
     ; and deliberately slower while Windows owns the mouse:
     ;   INT33/0Fh: 16 horizontal / 32 vertical mickeys per 8 pixels
     ;               (2x the conventional 8/16 defaults -> ~half base speed)
-    ;   INT33/13h: max double-speed threshold so CuteMouse does not pre-
+    ;   INT33/13h: max double-speed threshold so the DOS layer does not pre-
     ;               accelerate motion before USER.DLL sees it.
     mov ax,000Fh
     mov cx,16
@@ -188,7 +188,7 @@ Enable PROC FAR
     mov dx,07FFFh
     int 33h
 
-    ; Seed the coordinate baseline after reset/window setup. CuteMouse applies
+    ; Seed the coordinate baseline after reset/window setup. The resident core applies
     ; its mickey/pixel ratio and sensitivity to CX/DX; using position deltas
     ; here avoids feeding raw high-resolution mickeys straight to Windows.
     mov ax,0003h
@@ -205,7 +205,7 @@ Enable PROC FAR
     int 33h
     mov byte ptr [driver_enabled],1
 
-    ; No protected-mode idle/DPMI hotplug worker. CH375USB.SYS advances its
+    ; No protected-mode idle/DPMI hotplug worker. CH375USB advances its
     ; CH375 enumeration state machine one bounded step per timer tick.
     mov byte ptr [ch375_bridge],0
     jmp short enable_done
@@ -446,7 +446,7 @@ UnhookIdleInt2F ENDP
 ; Protected-mode Windows kernel-idle ISR (INT 2Fh AX=1689h).
 ;
 ; Keep this in CALLBACKS: the linker marks that segment PRELOAD FIXED.  We
-; throttle the protected->real transition and ask CH375USB.SYS to do work only when
+; throttle the protected->real transition and ask CH375W to do work only when
 ; it has a pending CONNECT. The real-mode service itself is guarded by usb_busy
 ; and win_hotplug_busy.
 ; ---------------------------------------------------------------------------
@@ -586,9 +586,9 @@ cb_ready:
     cmp word ptr [event_proc+2],0
     je short cb_exit
 
-    ; CuteMouse's SI/DI are accumulated mickey counters.  Passing their raw
+    ; The resident INT33 core's SI/DI are raw mickey counters. Passing their
     ; differences directly made the Windows pointer much too fast on real
-    ; hardware.  CX/DX are CuteMouse's processed cursor coordinates, after its
+    ; hardware. CX/DX are the resident core's processed cursor coordinates, after its
     ; sensitivity and mickey/pixel conversion. Convert those coordinates back
     ; into per-event relative movement for the Win16 mouse callback.
     mov bx,cx

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# CH375USB 0.5.0 unified Linux build
+# CH375USB 0.5.1 Linux build
 # Builds the unified DOS/Windows-aware SYS and the Win16 CH375MOU.DRV bridge.
 # Author: Davide "gat" - https://github.com/davidegat
 # SPDX-License-Identifier: GPL-3.0-or-later
@@ -33,7 +33,7 @@ download() {
 
 # NASM is intentionally accepted from PATH. It is small and commonly packaged,
 # while Open Watcom is bootstrapped locally below exactly as in the earlier
-# Windows companion build flow.
+# CH375WIN build flow.
 if ! command -v nasm >/dev/null 2>&1; then
     echo "ERROR: nasm not found in PATH." >&2
     echo "Install NASM, then rerun ./build.sh." >&2
@@ -115,8 +115,8 @@ if [ -d "$OWROOT/h" ]; then
 fi
 
 # WLINK's named SYSTEM definitions (including windows_dll) live in
-# wlink.lnk/wlsystem.lnk beside the linker. Calling wlink by absolute path is
-# NOT enough: Open Watcom searches PATH for these files. An earlier prototype
+# wlink.lnk/wlsystem.lnk beside the linker.  Calling wlink by absolute path is
+# NOT enough: Open Watcom searches PATH for these files.  An earlier build configuration
 # omitted this and silently linked CH375MOU as a normal Windows executable.
 OW_BINDIR="$(dirname "$WLINK")"
 export PATH="$OW_BINDIR:$PATH"
@@ -132,18 +132,18 @@ printf 'NASM              : %s\n' "$(command -v nasm)"
 printf 'WASM              : %s\n' "$WASM"
 printf 'WLINK             : %s\n\n' "$WLINK"
 
-rm -f CH375USB.SYS CH375W.SYS CH375MOU.DRV CH375MOU.MAP CH375MOU.OBJ
+rm -f CH375USB.SYS CH375W.SYS CH375MOU.DRV CH375MOU.MAP
+rm -f CH375MOU.OBJ
 
-# Unified release SYS. WIN_MOUSE_INT33_BRIDGE defaults to 1 in the source:
+# Unified release SYS.  WIN_MOUSE_INT33_BRIDGE defaults to 1 in the source:
 # normal DOS behavior is preserved, and the Windows-specific path wakes only
-# after the enhanced-mode notification. There is no separate CH375W.SYS.
+# after the enhanced-mode notification.  There is no separate CH375W.SYS.
 nasm -f bin CH375USB.ASM -o CH375USB.SYS
+nasm -f bin MTEST.ASM -o MTEST.COM
 
 # Our independently-written Win16 mouse.drv-compatible bridge.
 # WASM emits OMF; WLINK emits a 16-bit Windows NE driver/DLL image.
-# CH375MOU.OBJ is intentionally produced in the project root because the same
-# CH375MOU.LNK response file is also consumed by the real-DOS BUILD.BAT.
-# The ASM deliberately has a plain END (no MODEND start address). The linker
+# The ASM deliberately has a plain END (no MODEND start address).  The linker
 # file uses FORMAT WINDOWS DLL INITGLOBAL plus OPTION START=Initialize, so there
 # is exactly one initializer and no Open Watcom C DLL startup is involved.
 "$WASM" -q -2 -fo=CH375MOU.OBJ CH375MOU.ASM
@@ -164,7 +164,7 @@ if grep -q 'Warning!' "$LINK_LOG"; then
 fi
 rm -f CH375MOU.OBJ
 
-# Do not trust a zero WLINK exit status alone. WLINK can
+# Do not trust a zero WLINK exit status alone.  WLINK can
 # warn about an unknown SYSTEM and still emit a superficially valid NE file.
 # Verify the final image is really a Win16 DLL/driver before reporting success.
 python3 - CH375MOU.DRV <<'PYVERIFY'
@@ -200,11 +200,12 @@ printf '\nBuilt outputs:\n'
 printf '  CH375USB.SYS  %8s bytes\n' "$(stat -c%s CH375USB.SYS)"
 printf '  CH375MOU.DRV  %8s bytes\n' "$(stat -c%s CH375MOU.DRV)"
 printf '  CH375MOU.MAP  %8s bytes\n' "$(stat -c%s CH375MOU.MAP)"
+printf '  MTEST.COM      %8s bytes\n' "$(stat -c%s MTEST.COM)"
 printf '\nSHA-256:\n'
 sha256sum CH375USB.SYS CH375MOU.DRV
 
 printf '\nWindows 95 mouse setup:\n'
-printf '  1. Load CH375USB.SYS before WIN and load CuteMouse (CTMOUSE).\n'
+printf '  1. Load CH375USB.SYS before WIN. Do NOT load CuteMouse/CTMOUSE.\n'
 printf '  2. Copy CH375MOU.DRV to C:\\WINDOWS\\SYSTEM\\CH375MOU.DRV\n'
 printf '  3. In C:\\WINDOWS\\SYSTEM.INI, [boot]: mouse.drv=CH375MOU.DRV\n'
 printf '  4. Restart Windows.\n'

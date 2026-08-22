@@ -1,4 +1,4 @@
-; CH375USB 0.5.0 - win_hotplug.inc
+; CH375USB 0.5.1 - win_hotplug.inc
 ; Incremental Windows-95 root HID-mouse hotplug enumerator.
 ;
 ; Design rule: one bounded action per INT 1Ch invocation.  No multi-tick wait,
@@ -40,8 +40,8 @@
 
 ; Start discovery after a CONNECT status was observed by timer_1c.
 win_mouse_enum_start:
-    ; Suspend the optional high-rate RTC mouse sampler for the entire multi-tick
-    ; enumeration.
+    ; Hotplug uses the validated incremental state machine. Suspend the optional
+    ; high-rate RTC mouse sampler for the entire multi-tick enumeration.
     call rtc_win_mouse_disable
     mov byte [win_hotplug_pending],0
     mov byte [win_hotplug_delay],0
@@ -233,6 +233,7 @@ win_mouse_enum_tick:
     jmp .done
 
 .settle:
+    ; Consume only a physical disconnect while the device settles.
     call win_mouse_status_now
     jc .settle_count
     cmp al,USB_INT_DISCONNECT
@@ -250,9 +251,12 @@ win_mouse_enum_tick:
     jmp .done
 
 .mode5:
+    ; Host mode 5 is quiescent and permits GET_DEV_RATE.
     mov al,5
     call ch_set_mode
     jc .fail
+    ; Match the proven DOS speed-detection sequence: drain any mode-change
+    ; root events before asking GET_DEV_RATE.  This loop is capped at 8 events.
     call ch_collect_root_events
     cmp byte [win_enum_attempt],0
     jne .use_opposite_speed
@@ -281,6 +285,7 @@ win_mouse_enum_tick:
     jmp .done
 
 .mode7:
+    ; Assert bus reset, then leave it asserted only until the next timer tick.
     mov al,7
     call ch_set_mode
     jc .fail
@@ -298,6 +303,7 @@ win_mouse_enum_tick:
     jmp .done
 
 .mode6:
+    ; Release reset and generate SOF.  Reapply low speed only after mode 6.
     mov al,6
     call ch_set_mode
     jc .fail
@@ -326,6 +332,7 @@ win_mouse_enum_tick:
     jmp .done
 
 .prep_slot:
+    ; Root-only Windows hotplug: discard stale USB slots, never storage/hub-init.
     call clear_all_slots
     xor ax,ax
     call slot_ptr_ax
@@ -504,6 +511,12 @@ win_mouse_enum_tick:
     je .disconnect
     cmp al,USB_INT_SUCCESS
     jne .fail
+
+    ; A HID boot mouse may power up in Report Protocol.  In that mode many mice
+    ; prepend Report ID 1, yielding [01][buttons][dx][dy].  Our normal boot path
+    ; calls hid_set_boot_protocol(), so reproduce the exact request here but as
+    ; an incremental control transfer.  Without it the leading 01 is mistaken
+    ; for the left-button bit and X motion is interpreted as Y motion.
     mov byte [win_enum_state],WENUM_SET_PROTO_SETUP_START
     jmp .done
 .set_cfg_seen_connect:
@@ -513,6 +526,11 @@ win_mouse_enum_tick:
     jc .fail
     jmp .done
 
+; ---------------------------------------------------------------------------
+; Incremental HID SET_PROTOCOL(BOOT) control request
+; bmRequestType=21h, bRequest=0Bh, wValue=0, wIndex=mouse interface, wLength=0
+; Control-OUT with no data stage: SETUP(DATA0), then status IN(DATA1).
+; ---------------------------------------------------------------------------
 .set_proto_setup_start:
     xor ax,ax
     call slot_ptr_ax
@@ -523,6 +541,7 @@ win_mouse_enum_tick:
     mov [setup_buf+4],bl
     mov byte [setup_buf+5],0
     mov word [setup_buf+6],0
+
     xor al,al
     call usb_select_slot
     jc .fail
@@ -533,7 +552,7 @@ win_mouse_enum_tick:
     call ch_write_packet
     mov al,CMD_ISSUE_TOKEN
     call ch_cmd
-    mov al,PID_SETUP
+    mov al,PID_SETUP              ; endpoint 0
     call ch_data_out
     mov byte [win_enum_timeout],10
     mov byte [win_enum_state],WENUM_SET_PROTO_SETUP_WAIT
@@ -562,7 +581,7 @@ win_mouse_enum_tick:
     call ch_set_in_toggle
     mov al,CMD_ISSUE_TOKEN
     call ch_cmd
-    mov al,PID_IN
+    mov al,PID_IN                 ; endpoint 0 status stage
     call ch_data_out
     mov byte [win_enum_timeout],10
     mov byte [win_enum_state],WENUM_SET_PROTO_STATUS_WAIT
@@ -577,6 +596,7 @@ win_mouse_enum_tick:
     je .disconnect
     cmp al,USB_INT_SUCCESS
     jne .fail
+    ; Drain the zero-length status packet, mirroring usb_control_out0_slot().
     push cs
     pop es
     mov di,usb_buf
@@ -591,6 +611,10 @@ win_mouse_enum_tick:
     jc .fail
     jmp .done
 
+; ---------------------------------------------------------------------------
+; Incremental HID SET_IDLE(0) request, matching hid_set_idle0().
+; bmRequestType=21h, bRequest=0Ah, wValue=0, wIndex=mouse interface, wLength=0
+; ---------------------------------------------------------------------------
 .set_idle_setup_start:
     xor ax,ax
     call slot_ptr_ax
@@ -601,6 +625,7 @@ win_mouse_enum_tick:
     mov [setup_buf+4],bl
     mov byte [setup_buf+5],0
     mov word [setup_buf+6],0
+
     xor al,al
     call usb_select_slot
     jc .fail
@@ -660,6 +685,8 @@ win_mouse_enum_tick:
     mov di,usb_buf
     mov cx,64
     call ch_read_packet
+
+    ; Enumeration is now equivalent to the known-good boot HID init path.
     mov al,CH375_RETRY_FAST
     call ch_set_retry
     mov byte [win_enum_state],WENUM_READY
@@ -683,10 +710,13 @@ win_mouse_enum_tick:
     mov byte [win_enum_attempt],0
     mov byte [win_replug_armed],0
     mov byte [win_replug_ticks],0
+    ; Enumeration is now completely finished and the slot is safe to poll.
     call rtc_win_mouse_enable_if_ready
     jmp .done
 
 .retry_wait:
+    ; If a disconnect arrived while backing off, abort immediately.  Otherwise
+    ; restart after the delay even if no second CONNECT interrupt is generated.
     call win_mouse_status_now
     jc .retry_count
     cmp al,USB_INT_DISCONNECT

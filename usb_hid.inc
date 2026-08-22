@@ -1,4 +1,4 @@
-; CH375USB 0.5.0 - usb_hid.inc
+; CH375USB 0.5.1 - usb_hid.inc
 ; Author: Davide "gat" - https://github.com/davidegat
 ; Copyright (C) 2026 Davide "gat"
 ; SPDX-License-Identifier: GPL-3.0-or-later
@@ -36,6 +36,7 @@ hid_init_slot:
     clc
     ret
 
+
 hid_set_boot_protocol:
     mov byte [setup_buf+0],021h
     mov byte [setup_buf+1],00Bh
@@ -46,6 +47,7 @@ hid_set_boot_protocol:
     call usb_control_out0_slot
     ret
 
+
 hid_set_idle0:
     mov byte [setup_buf+0],021h
     mov byte [setup_buf+1],00Ah
@@ -55,6 +57,7 @@ hid_set_idle0:
     mov word [setup_buf+6],0
     call usb_control_out0_slot
     ret
+
 
 hid_poll_keyboard_slot:
     push ax
@@ -98,6 +101,7 @@ hid_poll_keyboard_slot:
     pop ax
     ret
 
+
 hid_poll_mouse_slot:
     push ax
     push bx
@@ -107,6 +111,9 @@ hid_poll_mouse_slot:
     push di
     push es
     mov [xfer_slot],al
+    ; Default is 4, as in the validated Windows path.  The Windows RTC fast path selects a
+    ; small bounded adaptive-drain count. The loop only continues after a real
+    ; changed report; NAK/timeout or unchanged zero-motion exits immediately.
     xor ax,ax
     mov al,[mouse_poll_burst]
     mov si,ax
@@ -137,16 +144,22 @@ hid_poll_mouse_slot:
     xor ah,ah
     call slot_ptr_ax
     xor byte [di+D_MOUSE_TOG],040h
+
+    ; A boot mouse with no new event may return the same buttons and zero motion.
     mov al,[usb_buf]
     and al,7
-    cmp al,[mouse_buttons]
+    cmp al,[mouse_hid_last_buttons]
     jne .changed
     cmp byte [usb_buf+1],0
     jne .changed
     cmp byte [usb_buf+2],0
     je .done
 .changed:
-%if MOUSE_BIOS_PS2
+%if INTERNAL_MOUSE_DRIVER
+    ; Retain direct USB HID -> internal INT33. Never route USB through the
+    ; BIOS C207 callback while isolating the Pocket386 physical-PS/2 freeze.
+    call mouse_internal_feed_hid
+%elif MOUSE_BIOS_PS2
     call bios_mouse_feed_report
 %else
     call process_mouse_report
@@ -163,6 +176,7 @@ hid_poll_mouse_slot:
     pop ax
     ret
 
+
 process_keyboard_slot:
     push ax
     push bx
@@ -170,7 +184,10 @@ process_keyboard_slot:
     push dx
     push si
     push di
+
     mov [xfer_slot],al
+
+
     xor bx,bx
     mov bl,[xfer_slot]
     mov si,kbd_old_mod
@@ -181,10 +198,13 @@ process_keyboard_slot:
     shl di,1
     add di,dx
     add di,kbd_old_keys
+
+
     mov al,[usb_buf]
     mov ah,[si]
     mov dl,al
     xor dl,ah
+
     test dl,01h
     jz .m1
     mov al,01Dh
@@ -247,6 +267,8 @@ process_keyboard_slot:
 .mods_done:
     mov al,[usb_buf]
     mov [si],al
+
+
     push di
     mov cx,6
 .rel_loop:
@@ -265,6 +287,8 @@ process_keyboard_slot:
     inc di
     loop .rel_loop
     pop di
+
+
     mov si,usb_buf+2
     mov cx,6
 .press_loop:
@@ -285,6 +309,8 @@ process_keyboard_slot:
 .press_next:
     inc si
     loop .press_loop
+
+
     push es
     push cs
     pop es
@@ -293,6 +319,7 @@ process_keyboard_slot:
     cld
     rep movsb
     pop es
+
     pop di
     pop si
     pop dx
@@ -300,6 +327,7 @@ process_keyboard_slot:
     pop bx
     pop ax
     ret
+
 
 key_in_new_report:
     push ax
@@ -323,6 +351,7 @@ key_in_new_report:
     pop ax
     ret
 
+
 key_in_old_at_di:
     push ax
     push cx
@@ -344,6 +373,7 @@ key_in_old_at_di:
     pop cx
     pop ax
     ret
+
 
 usage_to_set1:
     xor ah,ah
@@ -420,6 +450,10 @@ keymap_special:
     db 052h,048h,0E0h
 keymap_special_count equ ($-keymap_special)/3
 
+
+; ---------------------------------------------------------------------------
+; DOS keyboard typematic
+; ---------------------------------------------------------------------------
 kbd_repeat_note_press:
     push ax
     push bx
@@ -474,6 +508,7 @@ kbd_typematic_tick:
     jne .clear
     test byte [di+D_CAPS],CAP_KBD
     jz .clear
+
     mov si,kbd_repeat_usage
     add si,bx
     mov al,[si]
@@ -530,6 +565,7 @@ inject_kbd_scan:
     pop ax
     ret
 
+
 i8042_wait_input_empty:
     push ax
     push cx
@@ -554,17 +590,22 @@ i8042_kbd_byte:
     out 060h,al
     ret
 
+
 process_mouse_report:
     push ax
     push bx
     push dx
+
     mov bl,[mouse_buttons]
     mov al,[usb_buf]
     and al,7
     mov bh,al
     xor bl,bh
     mov [mouse_buttons],bh
+
     xor dx,dx
+
+    ; Movement event and counters.
     mov al,[usb_buf+1]
     cbw
     add [mouse_accum_dx],ax
@@ -580,6 +621,7 @@ process_mouse_report:
     or ax,ax
     jz .buttons
     or dx,0001h
+
 .buttons:
     test bl,01h
     jz .right
@@ -591,6 +633,7 @@ process_mouse_report:
 .left_release:
     inc word [mouse_release_l]
     or dx,0004h
+
 .right:
     test bl,02h
     jz .middle
@@ -602,6 +645,7 @@ process_mouse_report:
 .right_release:
     inc word [mouse_release_r]
     or dx,0010h
+
 .middle:
     test bl,04h
     jz .finish
@@ -613,6 +657,7 @@ process_mouse_report:
 .middle_release:
     inc word [mouse_release_m]
     or dx,0040h
+
 .finish:
     or [mouse_event_pending],dx
     or dx,dx
@@ -624,6 +669,10 @@ process_mouse_report:
     pop ax
     ret
 
+
+; ---------------------------------------------------------------------------
+; BIOS keyboard poll-before-chain
+; ---------------------------------------------------------------------------
 kbd_int16:
     cmp byte [cs:windows_active],1
     je .chain
@@ -642,6 +691,7 @@ kbd_poll_on_demand:
     push es
     push cs
     pop ds
+
     cmp byte [usb_present],1
     jne .done
     call usb_lock_try
@@ -674,15 +724,23 @@ kbd_poll_on_demand:
     pop ax
     ret
 
+
+; Legacy external-driver hook helper. INTERNAL_MOUSE_DRIVER builds return
+; immediately because CH375USB owns INT 33h from initialization.
 mouse_try_hook_int33:
+%if INTERNAL_MOUSE_DRIVER
+    ret
+%else
     push ax
     push bx
     push dx
     push es
+
     xor ax,ax
     mov es,ax
     mov ax,[es:33h*4]
     mov bx,[es:33h*4+2]
+
     mov dx,cs
     cmp bx,dx
     jne .not_ours
@@ -708,9 +766,17 @@ mouse_try_hook_int33:
     pop bx
     pop ax
     ret
+%endif
 
+
+%if INTERNAL_MOUSE_DRIVER = 0
+; INT 33h compatibility shim. The existing DOS mouse driver remains responsible
+; for cursor drawing; CH375USB supplies USB-derived position/buttons/mickeys.
 mouse_int33:
 %if MOUSE_BIOS_PS2
+    ; Legacy external-driver mode: INT 33h belongs to the external driver. We only poll the USB mouse before
+    ; chaining, so a game querying INT 33h sees freshly delivered BIOS-PS/2
+    ; callback data without inheriting CH375USB's old partial INT 33h API.
     cmp byte [cs:windows_active],1
     je .bios_chain
     call mouse_poll_on_demand
@@ -739,6 +805,7 @@ mouse_int33:
     je .set_callback
 .pass:
     jmp far [cs:old_int33_off]
+
 .reset:
     pushf
     call far [cs:old_int33_off]
@@ -766,6 +833,7 @@ mouse_int33:
     mov word [cs:mouse_cb_seg],0
     pop ax
     iret
+
 .get_pos:
     call mouse_poll_on_demand
     xor bx,bx
@@ -773,6 +841,7 @@ mouse_int33:
     mov cx,[cs:mouse_x]
     mov dx,[cs:mouse_y]
     iret
+
 .get_press:
     call mouse_poll_on_demand
     cmp bx,0
@@ -803,6 +872,7 @@ mouse_int33:
     xor ax,ax
     mov al,[cs:mouse_buttons]
     iret
+
 .get_release:
     call mouse_poll_on_demand
     cmp bx,0
@@ -830,18 +900,22 @@ mouse_int33:
     mov cx,[cs:mouse_release_m_x]
     mov dx,[cs:mouse_release_m_y]
     jmp .button_status
+
 .set_pos:
     mov [cs:mouse_x],cx
     mov [cs:mouse_y],dx
     jmp far [cs:old_int33_off]
+
 .set_hrange:
     mov [cs:mouse_min_x],cx
     mov [cs:mouse_max_x],dx
     jmp far [cs:old_int33_off]
+
 .set_vrange:
     mov [cs:mouse_min_y],cx
     mov [cs:mouse_max_y],dx
     jmp far [cs:old_int33_off]
+
 .get_motion:
     call mouse_poll_on_demand
     mov cx,[cs:mouse_motion_x]
@@ -849,16 +923,19 @@ mouse_int33:
     mov word [cs:mouse_motion_x],0
     mov word [cs:mouse_motion_y],0
     iret
+
 .set_callback:
     mov [cs:mouse_cb_mask],cx
     mov [cs:mouse_cb_off],dx
     mov [cs:mouse_cb_seg],es
     iret
 %endif
+%endif
 
 mouse_clear_runtime_state:
     mov byte [mouse_pending],0
     mov byte [mouse_buttons],0
+    mov byte [mouse_hid_last_buttons],0
     mov word [mouse_event_pending],0
     mov word [mouse_accum_dx],0
     mov word [mouse_accum_dy],0
@@ -875,6 +952,10 @@ mouse_clear_runtime_state:
     mov word [mouse_cb_seg],0
     ret
 
+
+; Applications such as EDIT query INT 33h much faster than the BIOS 18.2 Hz
+; timer. Polling here makes movement and button state immediately responsive.
+; The normal timer poll remains as a fallback for callback-driven programs.
 mouse_poll_on_demand:
     push ax
     push bx
@@ -884,8 +965,10 @@ mouse_poll_on_demand:
     push di
     push ds
     push es
+
     push cs
     pop ds
+
     cmp byte [usb_present],1
     jne .done
     call usb_lock_try
@@ -905,14 +988,19 @@ mouse_poll_on_demand:
 .next:
     inc si
     jmp .scan
+
 .polled:
     call usb_unlock
+
 .apply:
+%if INTERNAL_MOUSE_DRIVER = 0
     cmp byte [mouse_pending],1
     jne .done
     cmp byte [mouse_int33_hooked],1
     jne .done
     call mouse_apply_pending
+%endif
+
 .done:
     pop es
     pop ds
@@ -924,6 +1012,7 @@ mouse_poll_on_demand:
     pop ax
     ret
 
+
 mouse_apply_pending:
     push ax
     push bx
@@ -932,7 +1021,9 @@ mouse_apply_pending:
     push si
     push di
     push es
+
     mov byte [mouse_pending],0
+
     mov ax,[mouse_accum_dx]
     mov word [mouse_accum_dx],0
     mov bx,[mouse_x]
@@ -946,6 +1037,7 @@ mouse_apply_pending:
     mov bx,[mouse_max_x]
 .x_store:
     mov [mouse_x],bx
+
     mov ax,[mouse_accum_dy]
     mov word [mouse_accum_dy],0
     mov bx,[mouse_y]
@@ -959,13 +1051,19 @@ mouse_apply_pending:
     mov bx,[mouse_max_y]
 .y_store:
     mov [mouse_y],bx
+
+    ; Ask the installed DOS mouse driver to redraw its cursor at our position.
     mov ax,0004h
     mov cx,[mouse_x]
     mov dx,[mouse_y]
     pushf
     call far [old_int33_off]
+
+    ; Button edges were captured when each HID report arrived, so a short
+    ; click cannot disappear merely because press and release occurred in one batch.
     mov si,[mouse_event_pending]
     mov word [mouse_event_pending],0
+
     test si,0002h
     jz .no_lp
     mov ax,[mouse_x]
@@ -1008,12 +1106,14 @@ mouse_apply_pending:
     mov ax,[mouse_y]
     mov [mouse_release_m_y],ax
 .events_done:
+
     mov ax,[mouse_cb_mask]
     test ax,si
     jz .done
     mov ax,[mouse_cb_seg]
     or ax,[mouse_cb_off]
     jz .done
+
     mov ax,si
     xor bx,bx
     mov bl,[mouse_buttons]
@@ -1022,6 +1122,7 @@ mouse_apply_pending:
     mov si,[mouse_motion_x]
     mov di,[mouse_motion_y]
     call far [mouse_cb_off]
+
 .done:
     pop es
     pop di

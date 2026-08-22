@@ -1,10 +1,8 @@
-# CH375USB 0.5.0
+# CH375USB 0.5.1
 
-**CH375USB 0.5.0** is an open-source USB host driver stack for 386-class DOS / Windows 95 systems using an ISA-connected CH375 controller at the common parallel-I/O mapping `0260h` / `0261h`.
+CH375USB is an open-source USB host driver stack for 386-class DOS / Windows 95 systems using an ISA-connected WCH CH375 controller at the common `0260h` / `0261h` I/O mapping.
 
-Version 0.5.0 keeps the established DOS mass-storage path and extends the input side substantially: it adds the BIOS/PS/2 mouse bridge, software keyboard typematic, a Windows-aware HID mouse hotplug state machine, and the independently written Win16 companion `CH375MOU.DRV`.
-
-Prebuilt 0.5.0 binaries are published in [`binary/`](binary/): `CH375USB.SYS` and `CH375MOU.DRV`. The supplied build scripts can also rebuild them from source.
+**0.5.1 removes CuteMouse/CTMOUSE as a runtime dependency.** `CH375USB.SYS` now provides its own resident DOS `INT 33h` mouse driver and merges input from the physical BIOS PS/2 mouse and CH375 USB HID mouse. `CH375MOU.DRV` bridges that same `INT 33h` event stream into Windows 95.
 
 Author: **Davide "gat"**  
 GitHub: **https://github.com/davidegat**  
@@ -12,311 +10,142 @@ License: **GNU GPL v3 or later (`GPL-3.0-or-later`)**
 
 CH375USB is an independent, unofficial project. It is not affiliated with or endorsed by Nanjing Qinheng Microelectronics Co., Ltd. (WCH). See [`documentation/NOTICE.md`](documentation/NOTICE.md).
 
-## Table of contents
-
-- [Compatibility](#compatibility)
-- [Runtime dependency for mouse support](#runtime-dependency-for-mouse-support)
-- [Tested setup](#tested-setup)
-- [Pocket386 BIOS / CMOS warning](#pocket386-bios--cmos-warning)
-- [Files](#files)
-- [Basic DOS installation](#basic-dos-installation)
-- [DOS / Windows 95 dual boot](#dos--windows-95-dual-boot)
-- [Windows 95 mouse companion](#windows-95-mouse-companion)
-- [Building](#building)
-- [Troubleshooting](#troubleshooting)
-- [Project documentation](#project-documentation)
-- [License and source provenance](#license-and-source-provenance)
-
-## Compatibility
-
-| Device | DOS support | DOS hotplug | Windows 95 support | Windows 95 hotplug |
-|---|---|---|---|---|
-| USB mouse | Yes | Yes | Experimental through `CH375MOU.DRV` | Experimental |
-| USB flash drive / mass storage | Yes | Yes | Yes through the DOS-backed compatibility path when detected before Windows starts | Limited; not native Windows USB PnP |
-| USB keyboard | Yes | Yes | No native Windows keyboard driver | No |
-| External USB hub | Experimental | Experimental | No | No |
-
-### USB mouse
-
-- Works in DOS through the virtual BIOS PS/2 interface plus a conventional DOS mouse driver.
-- Can be connected and disconnected while DOS is running.
-- 0.5.0 deliberately avoids stuffing synthetic AUX bytes into the physical 8042 output buffer.
-- The tested/reference stack uses **CuteMouse / CTMOUSE** as the DOS mouse driver.
-- Windows 95 GUI mouse support is provided experimentally by `CH375MOU.DRV`, which consumes the DOS `INT 33h` event path.
-
-### USB flash drive / mass storage
-
-- Read/write support in DOS.
-- Hotplug works in DOS.
-- One DOS drive letter is reserved by CH375USB even when no USB storage is attached.
-- A storage device already detected by DOS can remain available in Windows 95 through the real-mode compatibility path.
-- Windows-side insertion/removal is **not** a native USB mass-storage Plug-and-Play implementation.
-- If a particular flash drive does not enumerate reliably after insertion, cold-boot testing with the drive already connected remains a useful compatibility check.
-
-### USB keyboard
-
-- Works in DOS.
-- Can be connected and disconnected while DOS is running.
-- Uses HID boot-protocol keyboard reports translated to PC-compatible scan codes.
-- 0.5.0 adds software typematic/repeat.
-- There is currently no Windows 95 protected-mode keyboard companion.
-
-### USB hub
-
-- One external hub with up to four downstream ports is partially implemented.
-- Hub support remains **experimental** and has not received the same validation as direct-root devices.
-- Low-speed downstream behavior should not be considered generally supported yet.
-
-## Runtime dependency for mouse support
-
-The mouse stack has an important runtime dependency:
-
-**CuteMouse / CTMOUSE is the DOS mouse driver used and tested with CH375USB 0.5.0.**
-
-CH375USB itself supplies the USB HID transport and virtual BIOS PS/2 pointing-device interface. CuteMouse then owns the conventional DOS `INT 33h` mouse API. Under Windows 95, `CH375MOU.DRV` receives events through that same `INT 33h` path.
-
-Reference stack:
+## Mouse architecture
 
 ```text
-USB HID mouse
-    -> CH375USB.SYS
-    -> virtual BIOS PS/2 interface (INT 15h / AH=C2h)
-    -> CuteMouse / CTMOUSE
-    -> DOS INT 33h
-    -> CH375MOU.DRV (Windows 95 only)
-    -> Windows mouse event procedure
+Physical PS/2 mouse -> BIOS INT 15h/C207 callback --+
+                                                   +-> CH375USB internal INT 33h -> DOS applications
+CH375 USB HID mouse -> direct HID report path -----+                         |
+                                                                             +-> CH375MOU.DRV -> Windows 95
 ```
 
-CuteMouse is **not distributed with CH375USB** and no CuteMouse source is incorporated into this project.
+The USB mouse no longer needs to pass through a virtual BIOS PS/2 layer. USB HID reports feed the internal mouse core directly. The physical PS/2 backend uses the real BIOS C207 callback. The two backends keep separate button state and are merged into one logical three-button `INT 33h` device.
 
-Project/package references:
+No `CTMOUSE.EXE`, `MOUSE.COM`, or other external DOS mouse driver is required or recommended on top of CH375USB 0.5.1.
 
-- FreeDOS CTMouse package: https://gitlab.com/FreeDOS/base/ctmouse
-- CuteMouse project files: https://sourceforge.net/projects/cutemouse/files/
+## Hardware-tested status
 
-Another BIOS/PS2-aware DOS mouse driver may theoretically work, but **0.5.0 has been developed and tested with CuteMouse**, so CuteMouse is the supported reference dependency.
+Validated on Pocket386 / MS-DOS 7.x / Windows 95:
 
-## Tested setup
+| Test | Result |
+|---|---|
+| DOS physical PS/2 movement/buttons through `MTEST` | Working |
+| DOS USB mouse hotplug through `MTEST` | Working |
+| DOS physical PS/2 + USB simultaneously | Working |
+| DOS EDIT with physical PS/2 | Working, including cursor |
+| DOS EDIT with USB mouse | Working, including cursor |
+| Monkey Island with physical PS/2 | Working, including cursor |
+| Windows 95 physical PS/2 | Working |
+| Windows 95 USB mouse present at startup | Working |
+| Windows 95 first USB hotplug after startup | Working |
+| Windows 95 physical PS/2 + USB simultaneously | Working |
+| Windows 95 USB unplug then replug in the same session | Known limitation |
 
-Primary development target:
+### DOS cursor behavior
 
-- Pocket386 / 386-class PC.
-- MS-DOS 7.x / Windows 95 DOS environment.
-- CH375 ISA USB controller at I/O base `0260h` (`data=0260h`, `command/status=0261h`).
-- USB flash drive: DOS read/write and hotplug.
-- USB HID keyboard: DOS input and hotplug.
-- USB HID mouse: DOS input/hotplug through the BIOS PS/2 + CuteMouse path.
-- Windows 95 mouse bridge: implemented through `CH375MOU.DRV`; still considered experimental outside the tested setup.
+The driver now implements the **text-mode software cursor requested by DOS programs through `INT 33h/01h`**. It restores the underlying text cell on movement/hide and honors the text-cursor masks configured through `INT 33h/0Ah`.
 
-The Pocket386 used during development has also been run with these performance-oriented BIOS settings:
+The driver does **not** display a permanent cursor at the DOS prompt merely because a mouse is connected. A program must request it through the normal mouse API. Programs and games that draw their own graphics cursor continue to do so normally.
 
-- AT Bus Clock: `PCLK2/8`
-- I/O Recovery: `Disabled`
-- I/O Recovery Period: `0.75 µs`
-- 16Bit ISA Insert Wait: `Disabled`
-- Slow Refresh: `120 µs`
+Programmable `INT 33h/09h` 16x16 graphics-cursor masks are not rendered by CH375USB yet; the current implementation stores the hotspot for compatibility.
 
-These values are **not CH375USB requirements**. Standard or conservative BIOS settings may be more stable on another machine. If something behaves unexpectedly, test with BIOS defaults before changing low-level timing.
+## Other device support
 
-## Pocket386 BIOS / CMOS warning
-
-The Pocket386 has an unusual and important hardware limitation: **it does not have a separate CMOS backup battery dedicated to retaining BIOS/RTC settings**. BIOS/CMOS retention depends on the same rechargeable battery that powers the computer itself.
-
-As a result, when the main battery is allowed to discharge completely, BIOS settings can be lost or reset to defaults. This is not a CH375USB failure.
-
-Two defaults are especially relevant to this project:
-
-- **mouse support may revert to Disabled**;
-- the **floppy/FDC configuration may revert to Enabled**, which can produce the familiar floppy-controller/FDC failure message or boot beeps on a machine without a usable floppy drive/controller configuration.
-
-Therefore, if USB mouse support suddenly appears completely dead after the Pocket386 has been stored with a flat battery, **check the BIOS before debugging the driver**. On commonly reported Pocket386 firmware, hold **Delete while powering on** to enter BIOS setup, then verify mouse support and the floppy/FDC settings.
-
-This also explains apparently spontaneous BIOS resets reported by Pocket386 users: the machine is using its main battery for retention instead of a separate coin-cell-style CMOS battery.
-
-### Saving/restoring BIOS settings with DOS utilities
-
-Generic DOS utilities exist that can save CMOS/BIOS configuration data and restore it later. One possible workaround is to keep a known-good CMOS backup and invoke the corresponding restore utility from `AUTOEXEC.BAT`, before starting Windows with `WIN`.
-
-This can be useful on a Pocket386 whose main battery has discharged and caused the firmware settings to reset. However, **CH375USB does not bundle, recommend, test, document commands for, or provide support for any CMOS backup/restore utility**. Formats and behavior are utility- and BIOS-specific, and writing incorrect CMOS data can create additional boot/configuration problems. Use such tools only if you already understand the specific utility and firmware involved.
-
-In a Windows boot profile, the logical placement would be before `WIN`; the dual-boot example below leaves an explicit comment showing where such an optional external restore step could be placed without prescribing a particular program.
-
-### Community-modified BIOS
-
-A community-modified Pocket386 BIOS has been discussed online with the defaults changed so that:
-
-- mouse support is **Enabled** by default;
-- the floppy/FDC setting is **Disabled** by default.
-
-Community thread supplied as a reference:
-
-https://forum.vcfed.org/index.php?threads/pocket-386.1247640/page-6
-
-A closely related Pocket386 discussion on VOGONS describes the same type of modification, made with AMIBCP 6.24, specifically to avoid the default floppy error/beeps and default-disabled mouse setting:
-
-https://www.vogons.org/viewtopic.php?start=100&t=99751
-
-**CH375USB has not tested or validated this modified BIOS.** It is not part of this project, and this project currently has **no verified instructions for flashing the Pocket386 BIOS**. The community report itself notes uncertainty about normal flashing tools and describes programming the firmware chip directly. Firmware flashing can render the machine unbootable; use any third-party BIOS image entirely at your own risk.
+- **USB mass storage:** DOS read/write and hotplug. Windows access remains DOS-backed compatibility, not native Windows USB mass-storage Plug and Play.
+- **USB keyboard:** HID boot protocol in DOS with software typematic/repeat. No native Windows 95 keyboard companion yet.
+- **USB hub:** experimental external-hub support.
+- **Storage scope:** primarily MBR + FAT12/FAT16, one active storage target/LUN, 512-byte sectors.
 
 ## Files
 
-### Prebuilt binaries
-
-- [`binary/CH375USB.SYS`](binary/CH375USB.SYS) — prebuilt 0.5.0 unified DOS/Windows-aware driver.
-- [`binary/CH375MOU.DRV`](binary/CH375MOU.DRV) — prebuilt 0.5.0 Win16 mouse-driver bridge.
-
-### Source and build files
-
-- `CH375USB.ASM` — unified resident driver source and DOS block-device interface.
-- `CH375MOU.ASM` — independently written Win16 mouse-driver bridge source.
-- `CH375MOU.LNK` — shared Open Watcom linker definition for the Win16 driver; used by both build scripts.
-- `bios_mouse.inc` — virtual BIOS PS/2 mouse interface.
-- `win_hotplug.inc` — bounded Windows root HID-mouse hotplug state machine.
-- `ch375_defs.inc` — CH375/USB constants.
-- `ch375_hw.inc` — low-level CH375 I/O and transaction helpers.
-- `ch375_native.inc` — CH375 native mass-storage path and storage abstraction.
-- `usb_core.inc` — USB enumeration and control transfers.
-- `usb_msc.inc` — USB Mass Storage BOT/SCSI support.
-- `usb_hid.inc` — USB HID keyboard/mouse support and typematic handling.
-- `usb_hub.inc` — experimental external-hub support.
-- `usb_maint.inc` — hotplug and deferred maintenance.
-- `BUILD.BAT` — native-DOS build of **both** `CH375USB.SYS` and `CH375MOU.DRV` using NASM and Open Watcom from fixed DOS paths.
-- `build.sh` — Linux/Unix build of both drivers; bootstraps Open Watcom and validates the Win16 NE image.
-- `CHANGELOG.md` — release history.
-- [`documentation/KNOWN_ISSUES.md`](documentation/KNOWN_ISSUES.md) — current open issues, hardware caveats and deferred work.
-- [`documentation/KNOWLEDGE.md`](documentation/KNOWLEDGE.md) — engineering notes and architecture.
-- [`documentation/NOTICE.md`](documentation/NOTICE.md) — project independence, provenance and external references.
-- `LICENSE` — GNU GPL v3 license text.
-
-The published binaries are project build outputs from this source tree. The repository does not contain the vendor `CH375DOS.SYS` or FreddyV's `CH375286.SYS` binary.
+- `CH375USB.ASM` — unified resident DOS/Windows-aware driver.
+- `internal_mouse.inc` — resident `INT 33h` core, physical PS/2 backend, USB mouse feed and DOS text-cursor support.
+- `CH375MOU.ASM` / `CH375MOU.LNK` — Win16 Windows 95 mouse bridge.
+- `MTEST.ASM` — small DOS `INT 33h` coordinate/button diagnostic.
+- `bios_mouse.inc` — BIOS PS/2 compatibility/legacy virtual-device support.
+- `usb_hid.inc` — USB HID keyboard/mouse handling.
+- `win_hotplug.inc` — bounded Windows HID-mouse hotplug state machine.
+- `usb_core.inc`, `usb_msc.inc`, `usb_hub.inc`, `usb_maint.inc` — USB core, storage, hub and maintenance code.
+- `BUILD.BAT` / `build.sh` — build the driver pair and `MTEST.COM`.
+- `binary/` — published build outputs.
 
 ## Basic DOS installation
 
-Copy `binary/CH375USB.SYS` from the repository to the DOS boot drive as `CH375USB.SYS` and add it to `CONFIG.SYS`:
+Copy `CH375USB.SYS` to the DOS boot drive and add:
 
 ```dos
 DEVICE=C:\CH375USB.SYS
 ```
 
-Do **not** load `CH375USB.SYS` and `CH375286.SYS` at the same time. Both need exclusive access to the CH375 controller.
+Do **not** load `CH375286.SYS` at the same time; only one driver can own the CH375 controller.
 
-For mouse support, load CuteMouse after CH375USB. Example `AUTOEXEC.BAT`:
+Do **not** load CuteMouse/CTMOUSE or another DOS mouse driver on top of CH375USB 0.5.1.
 
-```dos
-@ECHO OFF
-C:\CTMOUSE.EXE
-```
+## DOS / Windows 95 profile
 
-For a machine used mainly in DOS, this is the simplest setup and provides storage, keyboard, mouse and DOS hotplug support.
+`CH375USB.SYS` must be resident before `WIN`. It can be loaded normally from `CONFIG.SYS`, or a Windows-only profile can load it with FreeDOS `DEVLOAD.COM` immediately before Windows starts.
 
-## DOS / Windows 95 dual boot
-
-Loading CH375USB normally from the Windows profile in `CONFIG.SYS` can make Windows 95 startup slower because the real-mode storage driver remains resident throughout the boot path.
-
-A practical workaround tested during development is to use separate DOS and Windows profiles:
-
-1. Load CH375USB normally from `CONFIG.SYS` for the DOS profile.
-2. Leave CH375USB out of the Windows profile in `CONFIG.SYS`.
-3. In the Windows profile, load CH375USB from `AUTOEXEC.BAT` with FreeDOS `DEVLOAD.COM` immediately before Windows starts.
-4. Load CuteMouse before `WIN` if the `CH375MOU.DRV` Windows mouse bridge is being used.
-5. For storage compatibility, insert the USB drive and make sure DOS sees it **before** starting Windows.
-6. Optionally, users who already maintain a CMOS backup with a third-party DOS utility may restore it in this pre-Windows part of `AUTOEXEC.BAT`; this is outside CH375USB support.
-
-`DEVLOAD` is a FreeDOS utility that loads DOS device drivers from the command line and emulates a `DEVICE=` entry. Only `DEVLOAD.COM` is required at runtime.
-
-### Example `CONFIG.SYS`
+Example Windows profile fragment:
 
 ```dos
-[MENU]
-MENUITEM=DOS,DOS with CH375USB
-MENUITEM=WINDOWS,Windows 95
-MENUDEFAULT=WINDOWS,5
-
-[COMMON]
-DOS=HIGH,UMB
-FILES=40
-BUFFERS=20
-LASTDRIVE=Z
-
-[DOS]
-DEVICE=C:\CH375USB.SYS
-
-[WINDOWS]
-REM CH375USB is intentionally not loaded here.
-```
-
-### Example `AUTOEXEC.BAT`
-
-```dos
-@ECHO OFF
-GOTO %CONFIG%
-
-:DOS
-REM CH375USB.SYS is already resident from CONFIG.SYS.
-C:\CTMOUSE.EXE
-GOTO END
-
-:WINDOWS
-REM OPTIONAL and unsupported by CH375USB:
-REM If you use your own third-party CMOS restore utility, it may be called here.
-
-REM Load CH375USB only now, immediately before Windows.
 C:\DEVLOAD\DEVLOAD.COM C:\CH375USB.SYS
-
-REM CuteMouse is the tested INT 33h dependency for CH375MOU.DRV.
-C:\CTMOUSE.EXE
-
-REM For USB storage, the drive must already be inserted and visible in DOS here.
 WIN
-GOTO END
-
-:END
 ```
 
-With this setup:
-
-- the **DOS** profile provides USB storage, keyboard, mouse and DOS hotplug;
-- the **Windows 95** profile loads CH375USB only immediately before Windows starts;
-- a USB storage device already detected by DOS can remain available in Windows 95;
-- `CH375MOU.DRV` can use the CH375USB -> BIOS PS/2 -> CuteMouse -> `INT 33h` mouse path;
-- USB keyboard input remains DOS-only;
-- Windows storage remains a DOS compatibility path, **not** a native Windows USB stack.
+For USB storage compatibility, the storage device should be visible to DOS before starting Windows.
 
 ## Windows 95 mouse companion
 
-Use the prebuilt [`binary/CH375MOU.DRV`](binary/CH375MOU.DRV), or build `CH375MOU.DRV` locally with `build.sh` or `BUILD.BAT`.
-
-Typical setup:
-
-1. Make sure `CH375USB.SYS` and CuteMouse are loaded before `WIN`.
-2. Copy `CH375MOU.DRV` to:
+Copy `CH375MOU.DRV` to:
 
 ```text
 C:\WINDOWS\SYSTEM\CH375MOU.DRV
 ```
 
-3. In `C:\WINDOWS\SYSTEM.INI`, set under `[boot]`:
+and configure:
 
 ```ini
+[boot]
 mouse.drv=CH375MOU.DRV
 ```
 
-4. Restart Windows.
+`CH375MOU.DRV` is a Win16 mouse-driver bridge, not a native Windows USB HID stack. It registers an `INT 33h` callback into the resident CH375USB mouse core. At that point CH375USB re-arms the physical BIOS PS/2 callback so the physical mouse remains active after Windows enters enhanced mode.
 
-`CH375MOU.DRV` is a Win16 mouse-driver bridge, not a native USB HID stack. It depends on the real-mode CH375USB/CuteMouse event path remaining available while Windows runs.
+## MTEST mouse diagnostic
 
-The 0.5.0 Windows-side root mouse enumerator performs bounded work over multiple timer ticks rather than performing a long blocking enumeration inside one timer callback. Windows mouse hotplug is nevertheless still considered experimental.
+`MTEST.COM` is built from `MTEST.ASM`. It continuously displays `INT 33h` X/Y coordinates and button state without relying on application cursor drawing.
+
+```dos
+MTEST.COM
+```
+
+Move either mouse and press buttons; press `Esc` to exit. It is useful for separating transport/input failures from application-specific cursor behavior.
 
 ## Building
 
+### Native DOS / Windows 9x DOS mode
+
+Expected tool paths:
+
+- NASM: `C:\NASM\NASM.EXE`
+- Open Watcom: `C:\OPENWAT\BINW\WASM.EXE` and `WLINK.EXE`
+
+Run:
+
+```dos
+BUILD.BAT
+```
+
+Outputs:
+
+- `CH375USB.SYS`
+- `CH375MOU.DRV`
+- `CH375MOU.MAP`
+- `MTEST.COM`
+
 ### Linux / Unix
 
-Requirements:
-
-- NASM;
-- `unzip`;
-- Python 3;
-- `curl` or `wget` if Open Watcom has not already been bootstrapped locally.
+Requirements: NASM, Python 3, unzip, and curl/wget if the local Open Watcom toolchain has not already been bootstrapped.
 
 Run:
 
@@ -324,210 +153,14 @@ Run:
 ./build.sh
 ```
 
-The script builds into the working-tree root:
+The script builds the same outputs and validates the Win16 NE image before reporting success.
 
-- `CH375USB.SYS` with NASM;
-- `CH375MOU.DRV` with Open Watcom WASM/WLINK;
-- `CH375MOU.MAP` as a linker map.
+## Pocket386 BIOS note
 
-The repository's published prebuilt copies live in `binary/`; local builds are intentionally produced in the project root by the current build script.
+On Pocket386 systems, BIOS settings may be lost if the main battery fully discharges. Mouse support can revert to disabled and the floppy/FDC setting can revert to enabled. If mouse behavior suddenly changes after a flat battery, verify BIOS settings before debugging the driver.
 
-Open Watcom is downloaded into the project-local `.toolchains/` directory when required. The build checks that `CH375MOU.DRV` is actually a Win16 NE DLL/driver before reporting success.
+## Known issue retained for later
 
-### Native DOS / Windows 9x DOS mode
+A USB mouse can be present when Windows starts or can be hotplugged after Windows is already running. However, after an **unplug followed by replug in the same Windows 95 session**, USB mouse input currently does not resume. The physical PS/2 mouse continues to work. This is intentionally retained as a minor follow-up rather than destabilizing the validated 0.5.1 mouse architecture.
 
-`BUILD.BAT` now builds **both release drivers**, using the same essential assembler/linker options as `build.sh`:
-
-```text
-CH375USB.ASM -- NASM -f bin --------------------------> CH375USB.SYS
-CH375MOU.ASM -- WASM -q -2 -fo=CH375MOU.OBJ --------> CH375MOU.OBJ
-CH375MOU.OBJ -- WLINK @CH375MOU.LNK -----------------> CH375MOU.DRV
-                                                       CH375MOU.MAP
-```
-
-The DOS build deliberately uses fixed, simple 8.3-safe tool locations. Before running `BUILD.BAT`, install/extract the tools exactly as follows:
-
-```text
-C:\NASM\NASM.EXE
-C:\OPENWAT\BINW\WASM.EXE
-C:\OPENWAT\BINW\WLINK.EXE
-```
-
-#### Open Watcom V2 for DOS / Win16
-
-Use the **Open Watcom V2 C/C++ installer for DOS/16-bit Windows** and install it with the root directory set to `C:\OPENWAT`.
-
-- Open Watcom V2 releases/download page: https://github.com/open-watcom/open-watcom-v2/releases
-- Direct current DOS/Win16 C/C++ installer: https://github.com/open-watcom/open-watcom-v2/releases/download/Current-build/open-watcom-2_0-c-dos.exe
-
-For the native DOS host, Open Watcom's tools are under `BINW`; `BUILD.BAT` expects `WASM.EXE`, `WLINK.EXE` and the linker system-definition files there. It sets:
-
-```dos
-SET WATCOM=C:\OPENWAT
-SET EDPATH=C:\OPENWAT\EDDAT
-SET INCLUDE=C:\OPENWAT\H
-SET PATH=C:\NASM;C:\OPENWAT\BINW;%PATH%
-```
-
-It also points `WLINK_LNK` at `C:\OPENWAT\BINW\WLINK.LNK` when that file is present. This is important because `CH375MOU.DRV` must be linked as a **16-bit Windows NE DLL/driver**, not as an ordinary Windows executable.
-
-#### NASM for DOS
-
-Use a **native DOS NASM executable**, not the Win32/Win64 package. The documented DOS package for this build is NASM **3.01** from the FreeDOS repository:
-
-- FreeDOS NASM 3.01 package page (platform: DOS): https://www.ibiblio.org/pub/micro/pc-stuff/freedos/files/repositories/latest/html/en/devel/nasm/20251011.1/index.html
-- NASM project/download information: https://www.nasm.us/
-
-The FreeDOS package page provides the DOS `nasm.zip`. Extract/copy `NASM.EXE` so that the final path is:
-
-```text
-C:\NASM\NASM.EXE
-```
-
-NASM's flat `bin` output is used for the DOS `.SYS`; Open Watcom WASM emits the OMF object used by WLINK for the Win16 `.DRV`.
-
-#### Run the DOS build
-
-From the CH375USB source directory:
-
-```dos
-BUILD.BAT
-```
-
-A successful build produces in the source directory:
-
-```text
-CH375USB.SYS
-CH375MOU.DRV
-CH375MOU.MAP
-```
-
-`CH375MOU.OBJ` is temporary and is removed after a successful link.
-
-The batch file also refuses a `CH375MOU.DRV` build when WLINK reports `Warning!`, because a misconfigured Open Watcom linker can otherwise emit an apparently usable file with the wrong Windows image configuration.
-
-The Linux build additionally performs a Python-level inspection of the final NE header. The native DOS batch does not require Python; it relies on the explicit `CH375MOU.LNK` Win16 DLL/driver definition, WLINK's exit status, warning check and final-file existence check.
-
-## Troubleshooting
-
-### DOS BUILD.BAT says NASM is missing
-
-The batch file does not search arbitrary locations. It requires:
-
-```text
-C:\NASM\NASM.EXE
-```
-
-Install/extract the native DOS NASM package there, then run `BUILD.BAT` again.
-
-### DOS BUILD.BAT says Open Watcom is missing
-
-It requires the DOS-host Open Watcom tools at:
-
-```text
-C:\OPENWAT\BINW\WASM.EXE
-C:\OPENWAT\BINW\WLINK.EXE
-```
-
-If Open Watcom was installed somewhere else, reinstall/move it to `C:\OPENWAT` or edit the two root variables at the top of `BUILD.BAT` deliberately.
-
-### WLINK warns or CH375MOU.DRV is not produced
-
-Do not ignore the warning. Make sure the **DOS/Win16 Open Watcom distribution** is installed, `C:\OPENWAT\BINW` is intact, and `WLINK.LNK` is present there. The named Windows linker definitions must be available when `CH375MOU.LNK` requests a Windows DLL/driver image.
-
-### Mouse worked before, but is now completely dead
-
-**Check the Pocket386 BIOS first.** Because there is no separate CMOS backup battery, a fully discharged main battery can reset BIOS settings. Mouse support may revert to **Disabled**.
-
-Re-enter BIOS and enable mouse support before assuming that CH375USB has regressed.
-
-### FDC failure / floppy error suddenly appears at boot
-
-This can have the same cause: a BIOS reset can restore the default floppy/FDC setting to **Enabled**. On Pocket386 configurations without a usable floppy setup, this can produce an FDC failure message and/or boot beeps.
-
-Check the BIOS and disable the unused floppy/FDC option again.
-
-### Windows 95 does not see the USB drive
-
-CH375USB does not provide native Windows USB mass-storage hotplug. Connect the USB flash drive before starting Windows and make sure DOS sees it before `WIN`.
-
-If the drive was not detected by CH375USB first, do not expect Windows 95 to discover it later as a native USB device.
-
-### Windows 95 reports MS-DOS compatibility mode or starts very slowly
-
-Do not load CH375USB from the Windows profile in `CONFIG.SYS`. Instead, use the dual-boot arrangement above and load it from `AUTOEXEC.BAT` with `DEVLOAD` immediately before starting Windows:
-
-```dos
-C:\DEVLOAD\DEVLOAD.COM C:\CH375USB.SYS
-C:\CTMOUSE.EXE
-WIN
-```
-
-The USB storage device should already be connected and visible in DOS. This is a real-mode compatibility workaround, not native Windows USB support.
-
-### Windows 95 mouse does not work
-
-Check all of the following:
-
-1. Pocket386 BIOS mouse support is enabled.
-2. `CH375USB.SYS` is resident before Windows starts.
-3. CuteMouse/`CTMOUSE.EXE` loads successfully and the mouse works in DOS before `WIN`.
-4. `CH375MOU.DRV` is present in `C:\WINDOWS\SYSTEM`.
-5. `[boot]` in `SYSTEM.INI` contains `mouse.drv=CH375MOU.DRV`.
-
-If DOS mouse support does not work before Windows starts, fix that first; `CH375MOU.DRV` depends on the DOS `INT 33h` path.
-
-### USB flash drive is not recognized
-
-For maximum DOS/CH375 compatibility, use an **MBR (MS-DOS) partition table** with a **single primary FAT16 partition no larger than 2 GiB**. The physical USB device can be larger; the DOS-compatible partition should be 2 GiB or smaller.
-
-CH375USB currently supports **512-byte storage sectors** and safely rejects unsupported sector sizes.
-
-On Windows, use Disk Management to select the correct removable drive, remove the existing layout if necessary, use **MBR**, create a primary partition of **2 GB or less**, and format it as **FAT/FAT16**.
-
-On Linux, replacing `/dev/sdX` with the **correct USB device**:
-
-```sh
-sudo umount /dev/sdX?* 2>/dev/null
-sudo wipefs -a /dev/sdX
-sudo parted -s /dev/sdX mklabel msdos mkpart primary fat16 1MiB 2048MiB set 1 boot on
-sudo partprobe /dev/sdX
-sudo mkfs.fat -F 16 -n DOSUSB /dev/sdX1
-```
-
-**Warning:** these commands destroy the existing partition table and data on the selected device. Verify `/dev/sdX` before running them.
-
-If one flash drive still fails, try another, preferably an older/simple USB 2.0-era device. Flash-controller compatibility varies on retro USB host hardware.
-
-### USB hub support
-
-Hub support remains experimental and has not yet received systematic real-hardware validation. For reliable use, connect storage, keyboard or mouse directly to the CH375 USB port.
-
-### Some DOS games do not see the USB keyboard
-
-CH375USB translates boot-HID reports to PC-compatible scan codes, but some programs bypass conventional BIOS/DOS behavior or make assumptions about the physical keyboard controller. Such programs may still be incompatible.
-
-### Windows keyboard support
-
-USB keyboard input remains DOS-only in 0.5.0. There is no Windows keyboard companion equivalent to `CH375MOU.DRV`.
-
-### Windows 3.1 / Windows for Workgroups 3.11
-
-CH375USB 0.5.0 has not been validated as a Windows 3.x input solution. No Windows 3.1/WfW 3.11 compatibility claim is made.
-
-## Project documentation
-
-- [`CHANGELOG.md`](CHANGELOG.md) — complete release history and fixes.
-- [`documentation/KNOWN_ISSUES.md`](documentation/KNOWN_ISSUES.md) — current open issues, hardware caveats and intentionally deferred work.
-- [`documentation/KNOWLEDGE.md`](documentation/KNOWLEDGE.md) — architecture, debugging rules and engineering notes.
-- [`documentation/NOTICE.md`](documentation/NOTICE.md) — project independence and source/reference provenance.
-
-## License and source provenance
-
-CH375USB is released under **GPL-3.0-or-later**.
-
-The source code in this project is independently written. No proprietary WCH driver source code or vendor driver binary is included. No CuteMouse, Bret Johnson USBMOUSE, FreddyV CH375286 or other third-party source file is incorporated or redistributed as part of CH375USB.
-
-Public hardware/protocol specifications, documented DOS/BIOS/Windows interfaces, historical implementations and community reports were used as interoperability and engineering references.
-
-See [`documentation/NOTICE.md`](documentation/NOTICE.md) for the detailed provenance/reference record.
+See [`documentation/KNOWN_ISSUES.md`](documentation/KNOWN_ISSUES.md), [`documentation/KNOWLEDGE.md`](documentation/KNOWLEDGE.md), and [`documentation/NOTICE.md`](documentation/NOTICE.md).
