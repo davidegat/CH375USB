@@ -153,6 +153,8 @@ The following DOS software has been tested on real Pocket386 hardware with **bot
 | Lemmings | Game | Working | Working | Mouse input working |
 | SimEarth: The Living Planet | Game | Working | Working | Mouse input working |
 | Sid Meier's Civilization 474.03 | Game | Working | Working | Mouse input working |
+| Arkanoid | Game | Working | Working | Mouse input working |
+| Strip Poker Professional | Game | Working | Working | Mouse input working |
 
 These tests establish the current Pocket386 baseline; they are not a blanket guarantee for every BIOS, DOS program, game or Windows 95 machine.
 
