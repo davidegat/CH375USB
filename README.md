@@ -20,6 +20,7 @@ CH375USB is an independent, unofficial project. It is not affiliated with or end
 - [Mouse architecture and runtime dependencies](#mouse-architecture-and-runtime-dependencies)
 - [Hardware-tested status](#hardware-tested-status)
 - [Tested setup](#tested-setup)
+- [USB storage formatting](#usb-storage-formatting)
 - [Pocket386 BIOS / CMOS warning](#pocket386-bios--cmos-warning)
 - [Files](#files)
 - [Basic DOS installation](#basic-dos-installation)
@@ -67,6 +68,7 @@ Programmable `INT 33h/09h` 16x16 graphics-cursor masks are not currently rendere
 - One DOS drive letter is reserved by CH375USB even when no USB storage is attached.
 - A storage device already detected by DOS can remain available in Windows 95 through the real-mode compatibility path.
 - Windows-side insertion/removal is **not** a native USB mass-storage Plug-and-Play implementation.
+- For reliable cross-platform use, use the **validated 1 GiB FAT16 layout** documented in [USB storage formatting](#usb-storage-formatting), rather than a near-2 GiB FAT16 volume with automatically selected geometry.
 - **DOS removal:** close files/programs using the drive and wait for disk activity to stop before unplugging. If SMARTDRV write-behind caching is enabled, run `SMARTDRV /C` first.
 - **Windows 95 removal:** do **not** unplug USB storage while Windows is running. Exit Windows or shut down first; the current Windows storage path has no native safe-removal handshake.
 - CH375USB synchronizes writes that have already reached the driver, but it cannot flush data still held by DOS, Windows, or a higher-level disk cache.
@@ -134,7 +136,11 @@ The following DOS software has been tested on real Pocket386 hardware with **bot
 |---|---|---|---|---|
 | MS-DOS Editor (`EDIT`) | Program | Working | Working | Text cursor/input working |
 | DOS Shell (`DOSSHELL`) | Program | Working | Working | Input working |
+| QBasic 4.50 | Program | Working | Working | Mouse input working |
+| Norton 4.55 | Program | Working | Working | Mouse input working |
+| FastTracker II | Program | Working | Working | Mouse input working |
 | The Secret of Monkey Island | Game | Working | Working | Cursor/input working |
+| Monkey Island 2 | Game | Working | Working | Cursor/input working |
 | The Games: Winter Challenge | Game | Working | Working | Accolade, 1991 |
 | Wolfenstein 3D | Game | Working | Working | Mouse input working |
 | Ken's Labyrinth | Game | Working | Working | Mouse input working |
@@ -145,6 +151,8 @@ The following DOS software has been tested on real Pocket386 hardware with **bot
 | XQuest 2 | Game | Working | Working | Mouse input working |
 | Warcraft: Orcs & Humans | Game | Working | Working | Mouse input working |
 | Lemmings | Game | Working | Working | Mouse input working |
+| SimEarth: The Living Planet | Game | Working | Working | Mouse input working |
+| Sid Meier's Civilization 474.03 | Game | Working | Working | Mouse input working |
 
 These tests establish the current Pocket386 baseline; they are not a blanket guarantee for every BIOS, DOS program, game or Windows 95 machine.
 
@@ -153,7 +161,7 @@ These tests establish the current Pocket386 baseline; they are not a blanket gua
 - Pocket386 / 386-class PC.
 - MS-DOS 7.x / Windows 95 DOS environment.
 - CH375 ISA USB controller at I/O base `0260h` (`data=0260h`, `command/status=0261h`).
-- Properly formatted USB flash drive.
+- USB storage using the validated 1 GiB FAT16 layout documented below.
 - Physical PS/2 mouse: DOS input through the internal `INT 33h` driver and Windows 95 input through `CH375MOU.DRV`.
 - USB HID mouse: DOS input/hotplug through the direct HID -> internal `INT 33h` path and Windows 95 input through `CH375MOU.DRV`.
 
@@ -166,6 +174,58 @@ The Pocket386 used during development has also been run with these performance-o
 - Slow Refresh: `120 µs`
 
 These values are **not CH375USB requirements**. Standard or conservative BIOS settings may be more stable on another machine. If something behaves unexpectedly, test with BIOS defaults before changing low-level timing.
+
+## USB storage formatting
+
+For cross-platform use between Linux, DOS and Windows 95, the currently **validated conservative layout** is:
+
+- MBR / `msdos` partition table;
+- one primary FAT16 partition;
+- partition size: **1 GiB** (from 1 MiB to 1025 MiB in the Linux example below);
+- 512-byte logical sectors;
+- 64 sectors per cluster = **32 KiB clusters**;
+- two FAT copies;
+- 512 root-directory entries;
+- boot flag enabled for broad DOS-era compatibility.
+
+This replaces the earlier recommendation to use a near-2 GiB FAT16 partition with `mkfs.fat` choosing the geometry automatically. On the tested Pocket386 setup, that near-limit layout became unreliable once the filesystem contained many files and directories: the volume could be reported as corrupted when moved between Linux, DOS and Windows. The 1 GiB layout above was subsequently exercised with roughly 300 files and multiple DOS software trees without reproducing that corruption.
+
+This is a **real-hardware compatibility result**, not a claim that every theoretically valid FAT16 geometry above 1 GiB is inherently broken.
+
+### Linux: create the validated layout
+
+Replace `/dev/sdX` with the **whole USB device**, for example `/dev/sdb`. These commands erase the selected device completely.
+
+```sh
+sudo umount /dev/sdX?* 2>/dev/null
+sudo wipefs -a /dev/sdX
+sudo parted -s /dev/sdX mklabel msdos mkpart primary fat16 1MiB 1025MiB set 1 boot on
+sudo partprobe /dev/sdX
+sleep 1
+sudo mkfs.fat -F 16 -S 512 -s 64 -f 2 -r 512 -n DOSUSB /dev/sdX1
+```
+
+After copying files from Linux, unmount the filesystem before removing the drive:
+
+```sh
+sudo umount /dev/sdX1
+```
+
+A normal successful unmount flushes Linux filesystem buffers. If desired, `udisksctl power-off -b /dev/sdX` may be used after unmounting before physically removing the device.
+
+### DOS: format an already prepared 1 GiB partition
+
+CH375USB exposes storage as a **DOS block-device drive letter**, not as a BIOS `INT 13h` hard disk. For that reason, the recommended way to create the MBR and 1 GiB partition itself is the Linux procedure above (or another partitioning environment that can access the physical USB disk directly). Do not rely on DOS `FDISK` to partition the CH375USB drive through this driver.
+
+Once the 1 GiB partition already exists and CH375USB has mounted it as a DOS drive letter, it can be reformatted from MS-DOS using the normal `FORMAT` command. Replace `E:` with the drive letter printed by CH375USB at boot:
+
+```dos
+FORMAT E: /U /V:DOSUSB
+```
+
+This reformats the existing logical partition; it does **not** recreate the MBR or change the partition size. Do not use `/S` unless you deliberately want DOS system files copied to that volume.
+
+If a particular DOS `FORMAT` build refuses to format the installable block-device volume, prepare both the partition and FAT16 filesystem with the validated Linux command instead. The important compatibility target is the resulting 1 GiB FAT16 geometry above.
 
 ## Pocket386 BIOS / CMOS warning
 
@@ -570,27 +630,13 @@ This is a known 0.5.1 limitation. A USB mouse can be present when Windows starts
 
 This is intentionally retained as a minor follow-up issue rather than changing the validated 0.5.1 architecture late in the release.
 
-### USB flash drive is not recognized
+### USB flash drive is not recognized or appears corrupted after being heavily populated
 
-For maximum DOS/CH375 compatibility, use an **MBR (MS-DOS) partition table** with a **single primary FAT16 partition no larger than 2 GiB**. The physical USB device can be larger; the DOS-compatible partition should be 2 GiB or smaller.
+Use the **validated 1 GiB FAT16 layout** from [USB storage formatting](#usb-storage-formatting). Do not use the older near-2 GiB Linux recipe with geometry left entirely to `mkfs.fat`; that layout was observed to become unreliable after adding many files and directories on the tested Pocket386 workflow.
 
 CH375USB currently supports **512-byte storage sectors** and safely rejects unsupported sector sizes.
 
-On Windows, use Disk Management to select the correct removable drive, remove the existing layout if necessary, use **MBR**, create a primary partition of **2 GB or less**, and format it as **FAT/FAT16**.
-
-On Linux, replacing `/dev/sdX` with the **correct USB device**:
-
-```sh
-sudo umount /dev/sdX?* 2>/dev/null
-sudo wipefs -a /dev/sdX
-sudo parted -s /dev/sdX mklabel msdos mkpart primary fat16 1MiB 2048MiB set 1 boot on
-sudo partprobe /dev/sdX
-sudo mkfs.fat -F 16 -n DOSUSB /dev/sdX1
-```
-
-**Warning:** these commands destroy the existing partition table and data on the selected device. Verify `/dev/sdX` before running them.
-
-If one flash drive still fails, try another, preferably an older/simple USB 2.0-era device. Flash-controller compatibility varies on retro USB host hardware.
+If one flash drive still fails with the validated geometry, try another, preferably an older/simple USB 2.0-era device. Flash-controller compatibility varies on retro USB host hardware.
 
 ### USB hub support
 
