@@ -37,7 +37,7 @@ CH375USB is an independent, unofficial project. It is not affiliated with or end
 |---|---|---|---|---|
 | Physical PS/2 mouse | Yes, through CH375USB internal `INT 33h` | N/A | Yes through `CH375MOU.DRV` | N/A |
 | USB mouse | Yes | Yes | Yes through `CH375MOU.DRV` on the tested Pocket386 setup | First hotplug works; unplug then replug in the same Windows session is a known limitation |
-| USB flash drive / mass storage | Yes | Yes | Yes through the DOS-backed compatibility path when detected before Windows starts | Limited; not native Windows USB PnP |
+| USB flash drive / mass storage | Yes | Yes, when idle/closed | Yes through the DOS-backed compatibility path when detected before Windows starts | No native safe removal; do not unplug while Windows is running |
 | USB keyboard | Yes | Yes | No native Windows keyboard driver | No |
 | External USB hub | Experimental | Experimental | No | No |
 
@@ -67,6 +67,9 @@ Programmable `INT 33h/09h` 16x16 graphics-cursor masks are not currently rendere
 - One DOS drive letter is reserved by CH375USB even when no USB storage is attached.
 - A storage device already detected by DOS can remain available in Windows 95 through the real-mode compatibility path.
 - Windows-side insertion/removal is **not** a native USB mass-storage Plug-and-Play implementation.
+- **DOS removal:** close files/programs using the drive and wait for disk activity to stop before unplugging. If SMARTDRV write-behind caching is enabled, run `SMARTDRV /C` first.
+- **Windows 95 removal:** do **not** unplug USB storage while Windows is running. Exit Windows or shut down first; the current Windows storage path has no native safe-removal handshake.
+- CH375USB synchronizes writes that have already reached the driver, but it cannot flush data still held by DOS, Windows, or a higher-level disk cache.
 - If a particular flash drive does not enumerate reliably after insertion, cold-boot testing with the drive already connected remains a useful compatibility check.
 
 ### USB keyboard
@@ -137,6 +140,11 @@ The following DOS software has been tested on real Pocket386 hardware with **bot
 | Ken's Labyrinth | Game | Working | Working | Mouse input working |
 | Hexxagon | Game | Working | Working | Mouse input working |
 | Cannon Fodder | Game | Working | Working | Mouse input working |
+| Battle Chess | Game | Working | Working | Mouse input working |
+| Tyrian 2000 | Game | Working | Working | Mouse input working |
+| XQuest 2 | Game | Working | Working | Mouse input working |
+| Warcraft: Orcs & Humans | Game | Working | Working | Mouse input working |
+| Lemmings | Game | Working | Working | Mouse input working |
 
 These tests establish the current Pocket386 baseline; they are not a blanket guarantee for every BIOS, DOS program, game or Windows 95 machine.
 
@@ -145,7 +153,7 @@ These tests establish the current Pocket386 baseline; they are not a blanket gua
 - Pocket386 / 386-class PC.
 - MS-DOS 7.x / Windows 95 DOS environment.
 - CH375 ISA USB controller at I/O base `0260h` (`data=0260h`, `command/status=0261h`).
-- Properly formatted USB flash drive
+- Properly formatted USB flash drive.
 - Physical PS/2 mouse: DOS input through the internal `INT 33h` driver and Windows 95 input through `CH375MOU.DRV`.
 - USB HID mouse: DOS input/hotplug through the direct HID -> internal `INT 33h` path and Windows 95 input through `CH375MOU.DRV`.
 
@@ -259,7 +267,8 @@ A practical workaround tested during development is to use separate DOS and Wind
 3. In the Windows profile, load CH375USB from `AUTOEXEC.BAT` with FreeDOS `DEVLOAD.COM` immediately before Windows starts.
 4. **Do not load a separate DOS mouse driver**; CH375USB 0.5.1 provides `INT 33h` itself.
 5. For storage compatibility, insert the USB drive and make sure DOS sees it **before** starting Windows.
-6. Optionally, users who already maintain a CMOS backup with a third-party DOS utility may restore it in this pre-Windows part of `AUTOEXEC.BAT`; this is outside CH375USB support.
+6. Do **not** unplug that USB storage device while Windows is running; exit Windows or shut down first.
+7. Optionally, users who already maintain a CMOS backup with a third-party DOS utility may restore it in this pre-Windows part of `AUTOEXEC.BAT`; this is outside CH375USB support.
 
 `DEVLOAD` is a FreeDOS utility that loads DOS device drivers from the command line and emulates a `DEVICE=` entry. Only `DEVLOAD.COM` is required at runtime.
 
@@ -318,7 +327,7 @@ With this setup:
 - `CH375MOU.DRV` consumes CH375USB's own `INT 33h` callback stream;
 - the physical PS/2 and CH375 USB mouse can coexist on the same Windows pointer;
 - USB keyboard input remains DOS-only;
-- Windows storage remains a DOS compatibility path, **not** a native Windows USB stack.
+- Windows storage remains a DOS compatibility path, **not** a native Windows USB stack or safe-removal implementation.
 
 ## Windows 95 mouse companion
 
@@ -343,6 +352,8 @@ mouse.drv=CH375MOU.DRV
 5. Restart Windows.
 
 `CH375MOU.DRV` is a Win16 mouse-driver bridge, not a native USB HID stack. It registers a normal `INT 33h` callback with the resident CH375USB mouse core. When Windows enables the bridge, CH375USB re-arms the physical BIOS PS/2 callback so the physical mouse remains active after Windows enters enhanced mode.
+
+The bridge sets a wide hidden `INT 33h` coordinate range and centers that internal counter before seeding its relative-motion baseline. This prevents the first Windows session from exhausting coordinate headroom in one direction before the visible pointer reaches the screen edge.
 
 The Windows-side root USB mouse enumerator performs bounded work over multiple timer ticks rather than performing a long blocking enumeration inside one timer callback.
 
@@ -514,13 +525,20 @@ Check the BIOS and disable the unused floppy/FDC option again.
 
 CH375USB draws a text-mode cursor only after an application requests it through `INT 33h/01h`. The driver does not display a permanent DOS-prompt cursor.
 
-If `MTEST` shows movement/buttons but a specific program still has no pointer, verify whether that program expects a text cursor, supplies its own graphics cursor, or depends on an unimplemented graphics-cursor rendering detail. EDIT and Monkey Island are part of the current real-hardware validation baseline.
+If `MTEST` shows movement/buttons but a specific program still has no pointer, verify whether that program expects a text cursor, supplies its own graphics cursor, or depends on an unimplemented graphics-cursor rendering detail. The software matrix above is the current real-hardware validation baseline.
 
 ### Windows 95 does not see the USB drive
 
 CH375USB does not provide native Windows USB mass-storage hotplug. Connect the USB flash drive before starting Windows and make sure DOS sees it before `WIN`.
 
 If the drive was not detected by CH375USB first, do not expect Windows 95 to discover it later as a native USB device.
+
+### Can I unplug the USB drive?
+
+- **DOS:** yes, but only after closing files/programs using the drive and waiting for disk activity to stop. If SMARTDRV write-behind caching is enabled, run `SMARTDRV /C` first.
+- **Windows 95:** no. Do not unplug USB storage while Windows is running. Exit Windows or shut down first, then remove the drive.
+
+The reason is that Windows sees the storage through CH375USB's DOS real-mode compatibility path, not through a native Windows USB mass-storage stack with a safe-removal protocol.
 
 ### Windows 95 reports MS-DOS compatibility mode or starts very slowly
 
