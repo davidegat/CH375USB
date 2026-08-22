@@ -58,6 +58,8 @@ Verified on Pocket386:
 - Lemmings with PS/2 and USB mouse input.
 - SimEarth: The Living Planet with PS/2 and USB mouse input.
 - Sid Meier's Civilization 474.03 with PS/2 and USB mouse input.
+- Arkanoid with PS/2 and USB mouse input.
+- Strip Poker Professional with PS/2 and USB mouse input.
 - Windows 95 PS/2 operation.
 - Windows 95 USB mouse when present at startup.
 - Windows 95 first USB mouse hotplug after startup.
