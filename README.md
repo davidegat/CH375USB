@@ -102,23 +102,43 @@ The physical PS/2 backend uses the real BIOS callback rather than CH375USB proxy
 
 ## Hardware-tested status
 
-The current 0.5.1 mouse architecture has been exercised on real Pocket386 hardware with the following results:
+The current 0.5.1 mouse architecture has been exercised on real Pocket386 hardware with diagnostic tests and with a range of real DOS programs and games.
+
+### DOS
 
 | Test | Result |
 |---|---|
-| DOS physical PS/2 movement/buttons through `MTEST` | Working |
-| DOS USB mouse hotplug through `MTEST` | Working |
-| DOS physical PS/2 + USB simultaneously | Working |
-| DOS EDIT with physical PS/2 | Working, including cursor |
-| DOS EDIT with USB mouse | Working, including cursor |
-| Monkey Island with physical PS/2 | Working, including cursor/input |
-| Windows 95 physical PS/2 | Working |
-| Windows 95 USB mouse present at startup | Working |
-| Windows 95 first USB hotplug after startup | Working |
-| Windows 95 physical PS/2 + USB simultaneously | Working |
-| Windows 95 USB unplug then replug in the same session | Known limitation |
+| Physical PS/2 movement/buttons through `MTEST` | Working |
+| USB mouse movement/buttons through `MTEST` | Working |
+| USB mouse hotplug through `MTEST` | Working |
+| Physical PS/2 + USB simultaneously | Working |
 
-These tests establish the current Pocket386 baseline; they are not a blanket guarantee for every BIOS, DOS game or Windows 95 machine.
+### Windows 95
+
+| Test | Result |
+|---|---|
+| Physical PS/2 mouse | Working |
+| USB mouse present at startup | Working |
+| First USB mouse hotplug after startup | Working |
+| Physical PS/2 + USB simultaneously | Working |
+| USB unplug then replug in the same session | Known limitation |
+
+### DOS programs and games
+
+The following DOS software has been tested on real Pocket386 hardware with **both the physical PS/2 mouse and a CH375 USB mouse**.
+
+| Program / game | Type | Physical PS/2 | USB mouse | Notes |
+|---|---|---|---|---|
+| MS-DOS Editor (`EDIT`) | Program | Working | Working | Text cursor/input working |
+| DOS Shell (`DOSSHELL`) | Program | Working | Working | Input working |
+| The Secret of Monkey Island | Game | Working | Working | Cursor/input working |
+| The Games: Winter Challenge | Game | Working | Working | Accolade, 1991 |
+| Wolfenstein 3D | Game | Working | Working | Mouse input working |
+| Ken's Labyrinth | Game | Working | Working | Mouse input working |
+| Hexxagon | Game | Working | Working | Mouse input working |
+| Cannon Fodder | Game | Working | Working | Mouse input working |
+
+These tests establish the current Pocket386 baseline; they are not a blanket guarantee for every BIOS, DOS program, game or Windows 95 machine.
 
 ## Tested setup
 
@@ -133,7 +153,7 @@ Primary development target:
 - USB HID mouse: DOS input/hotplug through the direct HID -> internal `INT 33h` path and Windows 95 input through `CH375MOU.DRV`.
 - Simultaneous physical PS/2 + USB mouse: validated in DOS and Windows 95.
 - DOS text cursor: validated in EDIT.
-- Game input/cursor: validated with Monkey Island.
+- Program/game mouse input: validated with EDIT, DOSSHELL, The Secret of Monkey Island, The Games: Winter Challenge, Wolfenstein 3D, Ken's Labyrinth, Hexxagon and Cannon Fodder using both physical PS/2 and USB mice.
 
 The Pocket386 used during development has also been run with these performance-oriented BIOS settings:
 
