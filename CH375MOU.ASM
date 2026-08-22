@@ -33,7 +33,7 @@ idle_call_busy  DB 0
 
 ; DPMI 0.9 real-mode call structure (52 bytes) for INT 31h AX=0300h.
 ; We use it to simulate a real-mode INT 2Fh so the protected-mode mouse driver
-; can explicitly reach the resident CH375W.SYS multiplex handler.
+; can explicitly reach the resident CH375USB.SYS multiplex handler.
 rmcs            DB 52 DUP (0)
 DATASEG ENDS
 
@@ -127,7 +127,7 @@ Inquire ENDP
 ; ---------------------------------------------------------------------------
 ; VOID FAR PASCAL Enable(lpEventProc)
 ; Registers an INT 33h function 0Ch callback with the existing DOS mouse
-; driver. CH375W.SYS keeps the USB mouse path alive while Windows runs;
+; driver. CH375USB.SYS keeps the USB mouse path alive while Windows runs;
 ; CH375USB now delivers the normal INT 33h callbacks directly.
 ; ---------------------------------------------------------------------------
 Enable PROC FAR
@@ -446,7 +446,7 @@ UnhookIdleInt2F ENDP
 ; Protected-mode Windows kernel-idle ISR (INT 2Fh AX=1689h).
 ;
 ; Keep this in CALLBACKS: the linker marks that segment PRELOAD FIXED.  We
-; throttle the protected->real transition and ask CH375W to do work only when
+; throttle the protected->real transition and ask CH375USB to do work only when
 ; it has a pending CONNECT. The real-mode service itself is guarded by usb_busy
 ; and win_hotplug_busy.
 ; ---------------------------------------------------------------------------
