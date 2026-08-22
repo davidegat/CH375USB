@@ -81,6 +81,8 @@ The renderer is intentionally limited to text modes. `INT 33h/09h` graphics mask
 
 When `CH375MOU.DRV` installs its non-zero `INT 33h/0Ch` callback, CH375USB re-arms the physical BIOS PS/2 callback (`C207` + enable/rate) because Windows initialization can otherwise leave the physical backend inactive. Do not re-run unnecessary packet-size/resolution negotiation during this Windows-time re-arm.
 
+The Win16 bridge uses the resident core's processed `CX/DX` position as a hidden counter and converts successive positions back into relative motion for Windows. After setting the Windows-time `INT 33h` range to `0..32767`, `CH375MOU.DRV` must center that hidden counter at `16384,16384` before seeding `prev_pos_x/prev_pos_y`. Starting near a clamp can otherwise make the Windows pointer stop before reaching one screen edge until movement in the opposite direction creates headroom again.
+
 DOS text-cursor rendering is suspended while Windows is active.
 
 ## 6. Windows USB hotplug
@@ -111,6 +113,13 @@ Core invariants retained from the stable storage work:
 - bound block I/O to reported media capacity;
 - propagate partial-transfer and final write/cache-flush errors correctly.
 
+Write builds use `SYNC_AFTER_WRITE=1`; the storage path issues its backend cache/synchronize operation after writes. This only covers data already delivered to CH375USB. DOS or a disk-cache utility may still hold unwritten data above the driver.
+
+### Storage removal policy
+
+- **DOS:** hot-unplug is supported, but only after every file/program using the drive is closed and disk activity has stopped. If SMARTDRV write-behind caching is enabled, run `SMARTDRV /C` before unplugging.
+- **Windows 95:** do **not** unplug USB storage while Windows is running. The drive is exposed through the DOS real-mode compatibility path; CH375USB does not provide native Windows mass-storage PnP or a safe-removal handshake. Exit Windows or shut down first, then remove the drive under the DOS rules above.
+
 ## 8. Keyboard path
 
 The USB keyboard path targets HID boot keyboards, translates usages to PC/AT Set-1 make/break scan codes, handles mapped extended keys, clears state on detach and implements software typematic/repeat.
@@ -136,12 +145,14 @@ For mouse changes, preserve this order:
 3. USB first hotplug in DOS: `MTEST` movement/buttons.
 4. PS/2 + USB simultaneously.
 5. EDIT: cursor plus movement/buttons with PS/2 and USB.
-6. Real DOS games: Monkey Island and Winter Challenge (Accolade), with both physical PS/2 and USB mouse input.
-7. Windows 95 physical PS/2.
-8. Windows 95 USB present at startup.
-9. Windows 95 first USB hotplug.
-10. Windows 95 PS/2 + USB together.
-11. Separately track unplug/replug as the remaining known issue.
+6. DOS Shell (`DOSSHELL`) with PS/2 and USB.
+7. Real DOS games with both physical PS/2 and USB mouse input: The Secret of Monkey Island, The Games: Winter Challenge, Wolfenstein 3D, Ken's Labyrinth, Hexxagon, Cannon Fodder, Battle Chess, Tyrian 2000, XQuest 2, and Warcraft: Orcs & Humans.
+8. Windows 95 physical PS/2.
+9. Windows 95 USB present at startup.
+10. Windows 95 first USB hotplug.
+11. Windows 95 PS/2 + USB together.
+12. Confirm the Windows pointer can reach all four screen edges immediately after startup, without needing a compensating movement to the opposite edge.
+13. Separately track unplug/replug as the remaining known mouse issue.
 
 ## 11. Rules for future changes
 
@@ -151,5 +162,6 @@ For mouse changes, preserve this order:
 4. Keep Windows enumeration incremental/nonblocking.
 5. Do not add a permanent DOS cursor; render only when requested by `INT 33h`.
 6. Preserve the proven storage paths unless a replacement is measurably safer/better.
-7. Keep source, published binaries and documentation on the same release version.
-8. Distinguish tested behavior from planned behavior.
+7. Do not advertise Windows USB-storage safe removal; the current Windows path is DOS-backed compatibility storage.
+8. Keep source, published binaries and documentation on the same release version.
+9. Distinguish tested behavior from planned behavior.
