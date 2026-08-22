@@ -30,6 +30,7 @@ All notable CH375USB changes are recorded here.
 - `INT 33h/0004`, `0007` and `0008` now discard fractional mickey-to-pixel remainders after cursor warps/range changes, preventing stale sub-pixel movement from leaking into software that repeatedly recenters the pointer.
 - `CH375MOU.DRV` now centers the hidden `INT 33h` coordinate counter before seeding its Windows relative-motion baseline, preventing the Windows pointer from exhausting coordinate headroom before reaching a screen edge on first use.
 - Storage-removal guidance is now explicit: DOS hot-unplug is supported only after files/programs are closed and disk activity has stopped; if SMARTDRV write-behind caching is enabled, flush it with `SMARTDRV /C` first. USB storage must not be unplugged while Windows 95 is running because the Windows path is DOS-backed compatibility storage, not native safe-removal/PnP.
+- The recommended cross-platform USB storage layout is now the real-hardware validated conservative geometry: MBR, one 1 GiB FAT16 primary partition, 512-byte sectors, 32 KiB clusters, two FATs, and 512 root-directory entries. The previous near-2 GiB Linux FAT16 recipe with automatically selected geometry is no longer recommended after corruption was observed when the volume contained many files/directories.
 
 ### Hardware validation
 
@@ -40,7 +41,11 @@ Verified on Pocket386:
 - DOS PS/2 + USB simultaneous operation.
 - EDIT with PS/2 and USB, including the requested software cursor.
 - DOS Shell (`DOSSHELL`) with PS/2 and USB mouse input.
+- QBasic 4.50 with PS/2 and USB mouse input.
+- Norton 4.55 with PS/2 and USB mouse input.
+- FastTracker II with PS/2 and USB mouse input.
 - The Secret of Monkey Island with PS/2 and USB mouse input.
+- Monkey Island 2 with PS/2 and USB mouse input.
 - The Games: Winter Challenge with PS/2 and USB mouse input.
 - Wolfenstein 3D with PS/2 and USB mouse input.
 - Ken's Labyrinth with PS/2 and USB mouse input.
@@ -51,11 +56,14 @@ Verified on Pocket386:
 - XQuest 2 with PS/2 and USB mouse input.
 - Warcraft: Orcs & Humans with PS/2 and USB mouse input.
 - Lemmings with PS/2 and USB mouse input.
+- SimEarth: The Living Planet with PS/2 and USB mouse input.
+- Sid Meier's Civilization 474.03 with PS/2 and USB mouse input.
 - Windows 95 PS/2 operation.
 - Windows 95 USB mouse when present at startup.
 - Windows 95 first USB mouse hotplug after startup.
 - Windows 95 PS/2 + USB simultaneous operation.
 - No hard freeze when moving the physical PS/2 mouse.
+- Validated 1 GiB FAT16 storage layout with roughly 300 files and multiple DOS software trees transferred from Linux and read successfully under DOS/Windows without reproducing the corruption seen with the previous near-2 GiB layout.
 
 ### Known limitation
 
