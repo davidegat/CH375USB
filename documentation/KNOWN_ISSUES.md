@@ -40,9 +40,17 @@ The related `INT 33h` settings are stored/reported where implemented, but the cu
 
 ## Storage limitations
 
-### Windows storage is not native USB Plug and Play
+### Windows storage is not native USB Plug and Play or safe-removal aware
 
-Storage detected in DOS can remain accessible to Windows through the DOS real-mode compatibility path. Windows-side insertion/removal is not a native USB mass-storage PnP implementation.
+Storage detected in DOS can remain accessible to Windows through the DOS real-mode compatibility path. Windows-side insertion/removal is not a native USB mass-storage PnP implementation and CH375USB does not provide a Windows safe-removal handshake.
+
+**Do not unplug USB storage while Windows 95 is running.** Exit Windows or shut down before removing the drive. This avoids removing media while Windows, DOS, or a disk cache may still hold unwritten filesystem data.
+
+### DOS hot-unplug requires an idle/closed drive
+
+DOS storage hotplug is supported, but removal is not safe while files are open or disk activity is still occurring. Close every file/program using the drive and wait for activity to stop before unplugging. If SMARTDRV write-behind caching is enabled, run `SMARTDRV /C` first.
+
+CH375USB synchronizes its own completed writes to the storage backend, but it cannot flush data that DOS or another cache has not yet passed to the driver.
 
 ### FAT32
 
@@ -71,7 +79,7 @@ Third-party CMOS save/restore utilities and modified Pocket386 BIOS images are o
 ## Deferred engineering work
 
 - Fix Windows 95 USB mouse detach/replug state reset.
-- Broader DOS game/application `INT 33h` compatibility testing beyond the current EDIT, Monkey Island and Winter Challenge validation set.
+- Broader DOS game/application `INT 33h` compatibility testing beyond the current validated software matrix.
 - Optional complete graphics-cursor-mask renderer.
 - Native Windows 95 USB keyboard bridge.
 - External-hub completion.
@@ -84,4 +92,4 @@ Third-party CMOS save/restore utilities and modified Pocket386 BIOS images are o
 
 ## Validated 0.5.1 baseline that should not be casually disturbed
 
-On the tested Pocket386, the following now work together: physical PS/2 in DOS and Windows, USB mouse in DOS, USB first-hotplug in Windows, simultaneous PS/2 + USB mouse input, DOS text cursor in EDIT, and real-game mouse operation in Monkey Island and Winter Challenge with both PS/2 and USB mice. Future hotplug fixes should preserve this matrix.
+On the tested Pocket386, the following now work together: physical PS/2 in DOS and Windows, USB mouse in DOS, USB first-hotplug in Windows, simultaneous PS/2 + USB mouse input, DOS text cursor in EDIT, and real-program/game mouse operation with both PS/2 and USB in DOSSHELL, The Secret of Monkey Island, The Games: Winter Challenge, Wolfenstein 3D, Ken's Labyrinth, Hexxagon, Cannon Fodder, Battle Chess, Tyrian 2000, XQuest 2, and Warcraft: Orcs & Humans. Future hotplug or compatibility fixes should preserve this matrix.
