@@ -115,10 +115,40 @@ Core invariants retained from the stable storage work:
 
 Write builds use `SYNC_AFTER_WRITE=1`; the storage path issues its backend cache/synchronize operation after writes. This only covers data already delivered to CH375USB. DOS or a disk-cache utility may still hold unwritten data above the driver.
 
+### Validated FAT16 geometry
+
+For cross-platform Linux/DOS/Windows use on the tested Pocket386, the conservative storage geometry is:
+
+- MBR (`msdos`) partition table;
+- one primary FAT16 partition;
+- 1 GiB partition size;
+- 512-byte logical sectors;
+- 64 sectors per cluster = 32 KiB clusters;
+- two FAT copies;
+- 512 root-directory entries.
+
+Linux reference command:
+
+```sh
+sudo umount /dev/sdX?* 2>/dev/null
+sudo wipefs -a /dev/sdX
+sudo parted -s /dev/sdX mklabel msdos mkpart primary fat16 1MiB 1025MiB set 1 boot on
+sudo partprobe /dev/sdX
+sleep 1
+sudo mkfs.fat -F 16 -S 512 -s 64 -f 2 -r 512 -n DOSUSB /dev/sdX1
+```
+
+The previous near-2 GiB FAT16 layout created under Linux with automatically selected `mkfs.fat` geometry was observed to become corrupted/unreliable once the filesystem contained many files and directories. The 1 GiB geometry above was then tested with roughly 300 files and multiple DOS software trees without reproducing the corruption.
+
+Treat this as a real-hardware compatibility finding, not as a theoretical FAT16 limit or proof that every larger FAT16 volume is invalid.
+
+CH375USB exposes the mounted partition as a DOS block-device drive letter, not as a BIOS `INT 13h` disk. Therefore DOS `FDISK` is not the documented partitioning path through CH375USB. Once a correctly sized partition already exists, DOS `FORMAT <drive>: /U /V:DOSUSB` may be used to recreate the filesystem on that logical volume; partition creation itself should be done in an environment that can access the physical USB disk directly.
+
 ### Storage removal policy
 
 - **DOS:** hot-unplug is supported, but only after every file/program using the drive is closed and disk activity has stopped. If SMARTDRV write-behind caching is enabled, run `SMARTDRV /C` before unplugging.
 - **Windows 95:** do **not** unplug USB storage while Windows is running. The drive is exposed through the DOS real-mode compatibility path; CH375USB does not provide native Windows mass-storage PnP or a safe-removal handshake. Exit Windows or shut down first, then remove the drive under the DOS rules above.
+- **Linux host preparation/copying:** unmount the FAT16 filesystem before removing it. A successful unmount flushes Linux filesystem buffers.
 
 ## 8. Keyboard path
 
@@ -145,14 +175,15 @@ For mouse changes, preserve this order:
 3. USB first hotplug in DOS: `MTEST` movement/buttons.
 4. PS/2 + USB simultaneously.
 5. EDIT: cursor plus movement/buttons with PS/2 and USB.
-6. DOS Shell (`DOSSHELL`) with PS/2 and USB.
-7. Real DOS games with both physical PS/2 and USB mouse input: The Secret of Monkey Island, The Games: Winter Challenge, Wolfenstein 3D, Ken's Labyrinth, Hexxagon, Cannon Fodder, Battle Chess, Tyrian 2000, XQuest 2, Warcraft: Orcs & Humans, and Lemmings.
+6. DOS programs with both mice: DOS Shell (`DOSSHELL`), QBasic 4.50, Norton 4.55, and FastTracker II.
+7. Real DOS games with both physical PS/2 and USB mouse input: The Secret of Monkey Island, Monkey Island 2, The Games: Winter Challenge, Wolfenstein 3D, Ken's Labyrinth, Hexxagon, Cannon Fodder, Battle Chess, Tyrian 2000, XQuest 2, Warcraft: Orcs & Humans, Lemmings, SimEarth: The Living Planet, and Sid Meier's Civilization 474.03.
 8. Windows 95 physical PS/2.
 9. Windows 95 USB present at startup.
 10. Windows 95 first USB hotplug.
 11. Windows 95 PS/2 + USB together.
 12. Confirm the Windows pointer can reach all four screen edges immediately after startup, without needing a compensating movement to the opposite edge.
 13. Separately track unplug/replug as the remaining known mouse issue.
+14. Storage compatibility check: use the validated 1 GiB FAT16 geometry, populate it with a few hundred files/directories, and verify it remains readable across Linux, DOS and Windows 95.
 
 ## 11. Rules for future changes
 
@@ -163,5 +194,6 @@ For mouse changes, preserve this order:
 5. Do not add a permanent DOS cursor; render only when requested by `INT 33h`.
 6. Preserve the proven storage paths unless a replacement is measurably safer/better.
 7. Do not advertise Windows USB-storage safe removal; the current Windows path is DOS-backed compatibility storage.
-8. Keep source, published binaries and documentation on the same release version.
-9. Distinguish tested behavior from planned behavior.
+8. Keep the validated 1 GiB FAT16 geometry as the documented default until a different layout has comparable real-hardware stress testing.
+9. Keep source, published binaries and documentation on the same release version.
+10. Distinguish tested behavior from planned behavior.
