@@ -142,18 +142,12 @@ These tests establish the current Pocket386 baseline; they are not a blanket gua
 
 ## Tested setup
 
-Primary development target:
-
 - Pocket386 / 386-class PC.
 - MS-DOS 7.x / Windows 95 DOS environment.
 - CH375 ISA USB controller at I/O base `0260h` (`data=0260h`, `command/status=0261h`).
-- USB flash drive: DOS read/write and hotplug.
-- USB HID keyboard: DOS input and hotplug with software typematic.
+- Properly formatted USB flash drive
 - Physical PS/2 mouse: DOS input through the internal `INT 33h` driver and Windows 95 input through `CH375MOU.DRV`.
 - USB HID mouse: DOS input/hotplug through the direct HID -> internal `INT 33h` path and Windows 95 input through `CH375MOU.DRV`.
-- Simultaneous physical PS/2 + USB mouse: validated in DOS and Windows 95.
-- DOS text cursor: validated in EDIT.
-- Program/game mouse input: validated with EDIT, DOSSHELL, The Secret of Monkey Island, The Games: Winter Challenge, Wolfenstein 3D, Ken's Labyrinth, Hexxagon and Cannon Fodder using both physical PS/2 and USB mice.
 
 The Pocket386 used during development has also been run with these performance-oriented BIOS settings:
 
