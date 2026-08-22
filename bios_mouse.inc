@@ -1,4 +1,4 @@
-; CH375USB 0.5.0 - bios_mouse.inc
+; CH375USB 0.5.1 - bios_mouse.inc
 ; Author: Davide "gat" - https://github.com/davidegat
 ; Copyright (C) 2026 Davide "gat"
 ; SPDX-License-Identifier: GPL-3.0-or-later
@@ -11,11 +11,11 @@
 ;
 ; Design:
 ;   USB HID boot-mouse report -> INT 15h/C207 registered FAR callback
-;   CuteMouse (or another BIOS-PS/2-aware DOS mouse driver) owns INT 33h.
+;   CH375USB owns INT 33h directly; no external DOS mouse driver is required.
 ;
 ; Conservative build: Windows enhanced mode chains C2xx to the real BIOS.
 ; WIN_MOUSE_INT33_BRIDGE build: keep this virtual BIOS interface alive so a
-; DOS INT33 driver (e.g. CuteMouse) can continue feeding a Win16 mouse driver.
+; the resident INT33 core can continue feeding the Win16 mouse driver.
 ; Neither mode stuffs AUX bytes into the physical 8042 output buffer.
 
 %define BIOS_PS2_ERR_INVALID_FUNCTION 01h
@@ -61,7 +61,7 @@ bios_ps2_int15:
     push ds
     push es
 
-    ; Mirror CuteMouse's configuration into our USB side, but do not consume
+    ; Mirror the resident INT33/PS2 configuration into our USB side, but do not consume
     ; the request.  The physical BIOS remains the primary PS/2 owner.  This is
     ; what lets a real PS/2 mouse and the CH375 USB mouse share one INT 33h
     ; driver instead of CH375USB replacing the physical device.
@@ -174,7 +174,7 @@ bios_mouse_refresh_usb_available:
 
 
 ; Mirror state-changing C2xx requests so USB events can be delivered through
-; the same callback that CuteMouse registered with the physical BIOS.  This
+; the same callback that the resident mouse core registered with the physical BIOS.  This
 ; function deliberately does not produce a BIOS return value; the real BIOS is
 ; called afterwards and remains authoritative whenever it succeeds.
 ; DS must address the resident driver segment.  ES is the caller's original ES.
@@ -436,7 +436,7 @@ bios_mouse_sample_hz:
 
 ; ---------------------------------------------------------------------------
 
-; Apply the PS/2 resolution/scaling state mirrored from CuteMouse to a signed
+; Apply the PS/2 resolution/scaling state mirrored from the resident mouse core to a signed
 ; USB HID boot-mouse delta.  USB boot reports carry device-native signed counts;
 ; treating 4 counts/mm (PS/2 resolution code 2) as the neutral baseline lets the
 ; virtual device honor the same 1/2/4/8-count/mm request as the physical mouse.
@@ -538,10 +538,10 @@ bios_mouse_feed_report:
     mov bl,[usb_buf]
     and bl,07h
     mov [bios_mouse_last_buttons],bl
-    ; hid_poll_mouse_slot compares against mouse_buttons to suppress unchanged
+    ; hid_poll_mouse_slot compares against mouse_hid_last_buttons to suppress unchanged
     ; zero-motion reports. 0.5.0 forgot to update it in the BIOS backend, which
     ; could duplicate presses and miss a button-only release.
-    mov [mouse_buttons],bl
+    mov [mouse_hid_last_buttons],bl
 
     ; Keep current state even while disabled, but do not issue callbacks.
     cmp byte [bios_mouse_enabled],1
@@ -552,7 +552,7 @@ bios_mouse_feed_report:
     cmp byte [bios_mouse_in_callback],0
     jne .done
 
-    ; Honor the same PS/2 resolution/scaling requested by CuteMouse for both
+    ; Honor the same PS/2 resolution/scaling requested by the resident INT33 core for both
     ; the physical mouse and our USB-backed virtual mouse.
     mov al,[usb_buf+1]
     call bios_mouse_scale_axis
@@ -578,6 +578,19 @@ bios_mouse_feed_report:
 
     ; Standard callback status byte: bit3 is always one, bits0..2 buttons,
     ; bit4 X sign, bit5 Y sign.  Deltas are clamped so overflow bits stay clear.
+    ; INT 15h/C207 callback button order is historical BIOS order:
+    ; bit0=right, bit1=left, bit2=middle. usb_buf is HID/INT33 order
+    ; (left,right,middle), so swap bits 0/1 before invoking the callback.
+    xor bh,bh
+    mov bh,bl
+    and bh,03h
+    cmp bh,01h
+    je .swap_cb_lr
+    cmp bh,02h
+    jne .cb_buttons_ready
+.swap_cb_lr:
+    xor bl,03h
+.cb_buttons_ready:
     xor bh,bh
     or bl,08h
     test cl,080h
@@ -615,7 +628,7 @@ bios_mouse_feed_report:
 
 
 ; If a USB mouse disappears while a button is down, synthesize a zero-motion
-; release so CuteMouse/games cannot retain a stuck button indefinitely.
+; release so the internal INT33 core/games cannot retain a stuck button indefinitely.
 bios_mouse_release_all:
     push ax
     push bx
@@ -625,7 +638,7 @@ bios_mouse_release_all:
 
     push cs
     pop ds
-    mov byte [mouse_buttons],0
+    mov byte [mouse_hid_last_buttons],0
     cmp byte [bios_mouse_last_buttons],0
     je .done
     mov byte [bios_mouse_last_buttons],0
