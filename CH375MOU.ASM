@@ -188,9 +188,19 @@ Enable PROC FAR
     mov dx,07FFFh
     int 33h
 
-    ; Seed the coordinate baseline after reset/window setup. The resident core applies
-    ; its mickey/pixel ratio and sensitivity to CX/DX; using position deltas
-    ; here avoids feeding raw high-resolution mickeys straight to Windows.
+    ; Keep the resident INT33 position counter away from its 0/32767 clamps.
+    ; CH375MOU converts the processed absolute CX/DX positions back into relative
+    ; Windows motion.  Starting near an edge can exhaust movement in one direction
+    ; before the Windows pointer reaches the corresponding screen edge.  Centering
+    ; the hidden DOS coordinate counter gives equal headroom in every direction.
+    mov ax,0004h
+    mov cx,04000h
+    mov dx,04000h
+    int 33h
+
+    ; Seed the coordinate baseline after reset/window setup and centering. The
+    ; resident core applies its mickey/pixel ratio and sensitivity to CX/DX; using
+    ; position deltas here avoids feeding raw high-resolution mickeys to Windows.
     mov ax,0003h
     int 33h
     mov [prev_pos_x],cx
