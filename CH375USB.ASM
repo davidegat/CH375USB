@@ -334,24 +334,28 @@ hub_ports       db 0
 hub_status      times 4 db 0
 
 
-%if WIN_MOUSE_INT33_BRIDGE
-msg_banner      db 13,10,'CH375USB 0.5.1 INTERNAL-MOUSE - CH375 ISA',13,10,'$'
-%else
-msg_banner      db 13,10,'CH375USB 0.5.1 - DOS USB host driver for CH375 ISA',13,10,'$'
-%endif
-msg_desc        db 'Storage / HID keyboard / BIOS-PS2 USB mouse / hotplug | I/O 0260h',13,10,'$'
-msg_author      db 'Author: Davide (gat) | License: GPL-3.0-or-later',13,10,'$'
-msg_chipok      db 'Controller: CH375 detected.',13,10,'$'
-msg_nochip      db 'Controller: CH375 not detected; driver inactive.',13,10,'$'
-msg_hub         db 'Hub: detected (experimental support).',13,10,'$'
-msg_nohub       db 'Hub: not detected.',13,10,'$'
-msg_storage     db 'Storage: ready (read/write).',13,10,'$'
-msg_nostorage   db 'Storage: no media; DOS drive remains reserved.',13,10,'$'
-msg_kbd         db 'Keyboard: ready.',13,10,'$'
-msg_nokbd       db 'Keyboard: not detected.',13,10,'$'
-msg_mouse       db 'USB mouse: detected; internal INT33 active (no CTMOUSE).',13,10,'$'
-msg_nomouse     db 'USB mouse: not detected at boot; internal INT33/PS2 active.',13,10,'$'
-msg_hotplug     db 'Hotplug: enabled.',13,10,'$'
+msg_banner      db 13,10,'+====================================+',13,10
+                db '|  [ CH375USB - Version 0.5.1 ]      |',13,10
+                db '|  CH375 ISA USB Host Device Driver  |',13,10
+                db '|  Copyright (C) 2026 gat            |',13,10
+                db '|  github.com/davidegat/             |',13,10
+                db '+====================================+',13,10
+                db '|  I/O Address : 0260h               |',13,10
+                db '|  DOS Drive   : '
+msg_drive_letter db '?'
+                db ':                  |',13,10
+                db '+------------------------------------+',13,10,'$'
+msg_chipok      db ' >> CH375 detected.',13,10,'$'
+msg_nochip      db ' >> CH375 controller not detected - driver inactive.',13,10,'$'
+msg_hub         db ' >> USB hub detected (experimental).',13,10,'$'
+msg_nohub       db ' >> USB hub not detected.',13,10,'$'
+msg_storage     db ' >> Storage: ready (read/write).',13,10,'$'
+msg_nostorage   db ' >> Storage: no media; DOS drive remains reserved.',13,10,'$'
+msg_kbd         db ' >> Keyboard: ready.',13,10,'$'
+msg_nokbd       db ' >> Keyboard: not detected.',13,10,'$'
+msg_mouse       db ' >> USB mouse: detected.',13,10,'$'
+msg_nomouse     db ' >> USB mouse: not detected at boot.',13,10,'$'
+msg_hotplug     db ' >> Hot-Plug: enabled.',13,10,'$'
 strategy:
     mov [cs:request_off],bx
     mov [cs:request_seg],es
@@ -422,6 +426,21 @@ drv_init:
     mov ax,cs
     mov [bpb_ptr_array+2],ax
 
+    ; DOS 3.0+ passes the first drive number for a block driver at INIT+16h
+    ; (0=A, 1=B, ...). Capture it before returning the BPB pointer array so
+    ; the startup banner shows the actual drive letter reserved by DOS.
+    mov al,'?'
+    cmp byte [es:bx],23
+    jb .drive_letter_ready
+    mov al,[es:bx+22]
+    cmp al,25
+    ja .drive_letter_unknown
+    add al,'A'
+    jmp .drive_letter_ready
+.drive_letter_unknown:
+    mov al,'?'
+.drive_letter_ready:
+    mov [msg_drive_letter],al
 
     mov byte [es:bx+13],1
     mov word [es:bx+14],resident_end
@@ -431,10 +450,6 @@ drv_init:
 
     mov dx,msg_banner
     mov ah,09h
-    int 21h
-    mov dx,msg_desc
-    int 21h
-    mov dx,msg_author
     int 21h
 
     call ch_probe
