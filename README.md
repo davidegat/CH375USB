@@ -1,6 +1,7 @@
 # CH375USB 0.5.1
 
-**CH375USB 0.5.1** is an open-source USB host driver stack with mass storage, keyboard, mouse support for 386-class DOS / Windows 95 systems using an ISA-connected CH375 controller at the common parallel-I/O mapping `0260h` / `0261h`. CH375USB has been tested on the Pocket386
+**CH375USB 0.5.1** is an open-source USB host driver stack with mass storage, keyboard, mouse support for 386-class DOS / Windows 95 systems using an ISA-connected CH375 controller at the common parallel-I/O mapping `0260h` / `0261h`. CH375USB has been tested on the Pocket386.
+
 The Pocket 386 is a compact, retro-style mini laptop built for running legacy MS-DOS and early Windows software using a Ali M6117 (386SX-compatible, 40 MHz) processor and 8MB of RAM, and one USB A port controlled by the CH375.
 
 <img width="292" height="238" alt="image-removebg-preview (3)" src="https://github.com/user-attachments/assets/7faa5208-9a6f-4191-a51d-7aaf81b3e481" /><img width="310" height="247" alt="image-removebg-preview (4)" src="https://github.com/user-attachments/assets/45608208-5ba2-47c8-853a-2838ce2242a3" />
