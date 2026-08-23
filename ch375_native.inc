@@ -337,9 +337,11 @@ native_write_chunk64:
     push dx
     push si
     push ds
-    mov ax,[xfer_seg]
+    ; xfer_seg/xfer_off live in the resident driver segment.
+    ; Read both BEFORE changing DS to the caller's far-buffer segment.
+    mov ax,[cs:xfer_seg]
+    mov si,[cs:xfer_off]
     mov ds,ax
-    mov si,[xfer_off]
     mov dx,DATA_PORT
     mov cx,64
 .loop:
@@ -635,10 +637,20 @@ storage_write_sector_far:
     call storage_lba_valid
     jc .bad
     cmp byte [storage_mode],STORAGE_NATIVE
-    je native_write_sector_far
+    je .native
     cmp byte [storage_mode],STORAGE_BOT
     jne .bad
-    jmp msc_write_sector_far
+    call msc_write_sector_far
+    jc .bad
+    ; 0.5.1 storage safety hardening: every completed sector write is
+    ; immediately read back and compared before DOS can receive success.
+    call storage_verify_sector_far
+    ret
+.native:
+    call native_write_sector_far
+    jc .bad
+    call storage_verify_sector_far
+    ret
 .bad:
     stc
     ret
@@ -682,9 +694,11 @@ storage_verify_sector_far:
     mov [xfer_seg],bx
     jc .fail
 
-    mov ax,[xfer_seg]
+    ; xfer_seg/xfer_off live in the resident driver segment.
+    ; Read both BEFORE changing DS to the caller's far-buffer segment.
+    mov ax,[cs:xfer_seg]
+    mov si,[cs:xfer_off]
     mov ds,ax
-    mov si,[xfer_off]
     push cs
     pop es
     mov di,verify_buf
