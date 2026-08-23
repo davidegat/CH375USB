@@ -32,9 +32,11 @@ far_to_usb_buf:
     push di
     push ds
     push es
-    mov ax,[xfer_seg]
+    ; xfer_seg/xfer_off live in the resident driver segment.
+    ; Read both BEFORE changing DS to the caller's far-buffer segment.
+    mov ax,[cs:xfer_seg]
+    mov si,[cs:xfer_off]
     mov ds,ax
-    mov si,[xfer_off]
     push cs
     pop es
     mov di,usb_buf
@@ -855,9 +857,11 @@ msc_verify_sector_far:
     jc .fail
 
 
-    mov ax,[xfer_seg]
+    ; xfer_seg/xfer_off live in the resident driver segment.
+    ; Read both BEFORE changing DS to the caller's far-buffer segment.
+    mov ax,[cs:xfer_seg]
+    mov si,[cs:xfer_off]
     mov ds,ax
-    mov si,[xfer_off]
     push cs
     pop es
     mov di,verify_buf
