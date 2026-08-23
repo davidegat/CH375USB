@@ -41,21 +41,19 @@ CH375USB is an independent, unofficial project. It is not affiliated with or end
 
 | Device | DOS support | DOS hotplug | Windows 95 support | Windows 95 hotplug |
 |---|---|---|---|---|
-| Physical PS/2 mouse | Yes, through CH375USB internal `INT 33h` | Do not hot-plug PS/2 mice on legacy hardware unless the system explicitly supports it. | Yes through `CH375MOU.DRV` | N/A |
-| Physical PS/2 keyboard | No | No | No | No |
+| PS/2 mouse | Yes, through CH375USB internal `INT 33h` | Do not hot-plug PS/2 mice on legacy hardware unless the system explicitly supports it. | Yes through `CH375MOU.DRV` | N/A |
+| PS/2 keyboard | No | No | No | No |
 | USB mouse | Yes | Yes | Yes through `CH375MOU.DRV` on the tested Pocket386 setup | First hotplug works; unplug then replug in the same Windows session is a known limitation |
-| USB flash drive / mass storage | Yes | Yes, when idle/closed | Yes through the DOS-backed compatibility path when detected before Windows starts | No native safe removal; do not unplug while Windows is running |
+| USB mass storage | Yes | Yes, when idle/closed | Yes through the DOS-backed compatibility path when detected before Windows starts | No native safe removal; do not unplug while Windows is running |
 | USB keyboard | Yes | Yes | No native Windows keyboard driver | No |
 | External USB hub | Experimental | Experimental | No | No |
 
 ### USB and PS/2 mouse
 
-- `CH375USB.SYS` now provides its own resident DOS `INT 33h` mouse driver.
-- The physical PS/2 mouse is received through the real BIOS `INT 15h/C207` callback.
-- CH375 USB HID mouse reports feed the internal mouse core directly; they no longer need to pass through a synthetic BIOS PS/2 layer.
+- `CH375USB.SYS` provides its own resident DOS `INT 33h` mouse driver.
+- PS/2 mouse is received through the real BIOS `INT 15h/C207` callback.
+- CH375 USB HID mouse reports feed the internal mouse core directly.
 - Physical PS/2 and USB mouse input can coexist and control the same logical three-button DOS mouse.
-- The USB and PS/2 backends keep separate button state before being merged into the common `INT 33h` state.
-- The driver deliberately avoids stuffing synthetic AUX bytes into the physical 8042 output buffer.
 - DOS programs receive the normal `INT 33h` API without requiring `CTMOUSE.EXE` or `MOUSE.COM`.
 - Windows 95 GUI mouse support is provided by `CH375MOU.DRV`, which consumes the same resident `INT 33h` callback stream.
 
@@ -74,17 +72,11 @@ Programmable `INT 33h/09h` 16x16 graphics-cursor masks are not currently rendere
 - One DOS drive letter is reserved by CH375USB even when no USB storage is attached.
 - A storage device already detected by DOS can remain available in Windows 95 through the real-mode compatibility path.
 - Windows-side insertion/removal is **not** a native USB mass-storage Plug-and-Play implementation.
-- For reliable cross-platform use, use the **validated 1 GiB FAT16 layout** documented in [USB storage formatting](#usb-storage-formatting), rather than a near-2 GiB FAT16 volume with automatically selected geometry.
-- **DOS removal:** close files/programs using the drive and wait for disk activity to stop before unplugging. If SMARTDRV write-behind caching is enabled, run `SMARTDRV /C` first.
-- **Windows 95 removal:** do **not** unplug USB storage while Windows is running. Exit Windows or shut down first; the current Windows storage path has no native safe-removal handshake.
-- CH375USB synchronizes writes that have already reached the driver, but it cannot flush data still held by DOS, Windows, or a higher-level disk cache.
-- If a particular flash drive does not enumerate reliably after insertion, cold-boot testing with the drive already connected remains a useful compatibility check.
 
 ### USB keyboard
 
 - Works in DOS.
 - Can be connected and disconnected while DOS is running.
-- Uses HID boot-protocol keyboard reports translated to PC-compatible scan codes.
 - Software typematic/repeat is implemented.
 - There is currently no Windows 95 protected-mode keyboard companion.
 
@@ -99,17 +91,18 @@ Programmable `INT 33h/09h` 16x16 graphics-cursor masks are not currently rendere
 The 0.5.1 mouse stack is self-contained:
 
 ```text
-Physical PS/2 mouse -> BIOS INT 15h/C207 callback --+
-                                                   +-> CH375USB internal INT 33h -> DOS applications
-CH375 USB HID mouse -> direct HID report path -----+                         |
-                                                                             +-> CH375MOU.DRV -> Windows 95
+
+PS/2 mouse -> INT 15h/C207 callback ---+
+                                       +---> CH375USB internal INT 33h ---> DOS
+USB mouse -> HID report path ----------+              |
+                                                      +---> CH375MOU.DRV ---> Windows
 ```
 
-No external DOS mouse driver is needed. In particular, **CuteMouse / CTMOUSE is no longer a runtime dependency and should not be loaded on top of CH375USB 0.5.1**.
+No external DOS mouse driver (eg. CTMOUSE.EXE or MOUSE.COM) is needed.
 
-CuteMouse remains relevant only as historical/open-source reference material documented in [`documentation/NOTICE.md`](documentation/NOTICE.md); its source or binary is not incorporated or redistributed by CH375USB.
+CuteMouse remains relevant as historical/open-source reference material documented in [`documentation/NOTICE.md`](documentation/NOTICE.md); its source or binary is not incorporated or redistributed by CH375USB.
 
-The physical PS/2 backend uses the real BIOS callback rather than CH375USB proxying all BIOS mouse services. This avoids the earlier hard-lock behavior seen when taking over the Pocket386 PS/2 path through an unnecessary `INT 15h` proxy. The USB backend bypasses BIOS C207 entirely and feeds the common mouse core directly.
+The physical PS/2 backend uses the real BIOS callback rather than CH375USB proxying all BIOS mouse services. The USB backend bypasses BIOS C207 entirely and feeds the common mouse core directly.
 
 ## Hardware-tested status
 
@@ -119,54 +112,54 @@ The current 0.5.1 mouse architecture has been exercised on real Pocket386 hardwa
 
 | Test | Result |
 |---|---|
-| Physical PS/2 movement/buttons through `MTEST` | Working |
+| PS/2 mouse movement/buttons through `MTEST` | Working |
 | USB mouse movement/buttons through `MTEST` | Working |
 | USB mouse hotplug through `MTEST` | Working |
-| Physical PS/2 + USB simultaneously | Working |
+|  PS/2 + USB mouse simultaneously | Working |
 
 ### Windows 95
 
 | Test | Result |
 |---|---|
-| Physical PS/2 mouse | Working |
+| PS/2 mouse | Working |
 | USB mouse present at startup | Working |
 | First USB mouse hotplug after startup | Working |
-| Physical PS/2 + USB simultaneously | Working |
+| PS/2 + USB simultaneously | Working |
 | USB unplug then replug in the same session | Known limitation |
 
 ### DOS programs and games
 
 The following DOS software has been tested on real Pocket386 hardware with **both the physical PS/2 mouse and a CH375 USB mouse**.
 
-| Program / game | Type | Physical PS/2 | USB mouse | Notes |
-|---|---|---|---|---|
-| MS-DOS Editor (`EDIT`) | Program | Working | Working | Text cursor/input working |
-| DOS Shell (`DOSSHELL`) | Program | Working | Working | Input working |
-| QBasic 4.50 | Program | Working | Working | Mouse input working |
-| Norton 4.55 | Program | Working | Working | Mouse input working |
-| FastTracker II | Program | Working | Working | Mouse input working |
-| The Secret of Monkey Island | Game | Working | Working | Cursor/input working |
-| Monkey Island 2 | Game | Working | Working | Cursor/input working |
-| The Games: Winter Challenge | Game | Working | Working | Accolade, 1991 |
-| Wolfenstein 3D | Game | Working | Working | Mouse input working |
-| Ken's Labyrinth | Game | Working | Working | Mouse input working |
-| Hexxagon | Game | Working | Working | Mouse input working |
-| Cannon Fodder | Game | Working | Working | Mouse input working |
-| Battle Chess | Game | Working | Working | Mouse input working |
-| Tyrian 2000 | Game | Working | Working | Mouse input working |
-| XQuest 2 | Game | Working | Working | Mouse input working |
-| Warcraft: Orcs & Humans | Game | Working | Working | Mouse input working |
-| Lemmings | Game | Working | Working | Mouse input working |
-| SimEarth: The Living Planet | Game | Working | Working | Mouse input working |
-| Sid Meier's Civilization 474.03 | Game | Working | Working | Mouse input working |
-| Arkanoid | Game | Working | Working | Mouse input working |
-| Strip Poker Professional | Game | Working | Working | Mouse input working |
+| Program / game | Type | Physical PS/2 | USB mouse |
+|---|---|---|---|
+| MS-DOS Editor (`EDIT`) | Program | Working | Working | 
+| DOS Shell (`DOSSHELL`) | Program | Working | Working | 
+| QBasic 4.50 | Program | Working | Working | 
+| Norton 4.55 | Program | Working | Working | 
+| FastTracker II | Program | Working | Working | 
+| The Secret of Monkey Island | Game | Working | 
+| Monkey Island 2 | Game | Working | Working | 
+| The Games: Winter Challenge | Game | Working | Working | 
+| Wolfenstein 3D | Game | Working | Working | 
+| Ken's Labyrinth | Game | Working | Working | 
+| Hexxagon | Game | Working | Working | 
+| Cannon Fodder | Game | Working | Working | 
+| Battle Chess | Game | Working | Working | 
+| Tyrian 2000 | Game | Working | Working | 
+| XQuest 2 | Game | Working | Working | 
+| Warcraft: Orcs & Humans | Game | Working | Working |
+| Lemmings | Game | Working | Working | 
+| SimEarth: The Living Planet | Game | Working | Working |
+| Sid Meier's Civilization 474.03 | Game | Working | Working |
+| Arkanoid | Game | Working | Working | 
+| Strip Poker Professional | Game | Working | Working |
 
 These tests establish the current Pocket386 baseline; they are not a blanket guarantee for every BIOS, DOS program, game or Windows 95 machine.
 
 ## Tested setup
 
-- Pocket386 / 386-class PC.
+- Pocket386 PC.
 - MS-DOS 7.x / Windows 95 DOS environment.
 - CH375 ISA USB controller at I/O base `0260h` (`data=0260h`, `command/status=0261h`).
 - USB storage using the validated 1 GiB FAT16 layout documented below.
@@ -177,7 +170,6 @@ The Pocket386 used during development has also been run with these performance-o
 
 - AT Bus Clock: `PCLK2/8`
 - I/O Recovery: `Disabled`
-- I/O Recovery Period: `0.75 µs`
 - 16Bit ISA Insert Wait: `Disabled`
 - Slow Refresh: `120 µs`
 
@@ -219,7 +211,7 @@ After copying files from Linux, unmount the filesystem before removing the drive
 sudo umount /dev/sdX1
 ```
 
-A normal successful unmount flushes Linux filesystem buffers. If desired, `udisksctl power-off -b /dev/sdX` may be used after unmounting before physically removing the device.
+A normal successful unmount flushes Linux filesystem buffers.
 
 ### DOS: format an already prepared 1 GiB partition
 
@@ -231,9 +223,7 @@ Once the 1 GiB partition already exists and CH375USB has mounted it as a DOS dri
 FORMAT E: /U /V:DOSUSB
 ```
 
-This reformats the existing logical partition; it does **not** recreate the MBR or change the partition size. Do not use `/S` unless you deliberately want DOS system files copied to that volume.
-
-If a particular DOS `FORMAT` build refuses to format the installable block-device volume, prepare both the partition and FAT16 filesystem with the validated Linux command instead. The important compatibility target is the resulting 1 GiB FAT16 geometry above.
+This reformats the existing logical partition; If a particular DOS `FORMAT` build refuses to format the installable block-device volume, prepare both the partition and FAT16 filesystem with the validated Linux command instead. The important compatibility target is the resulting 1 GiB FAT16 geometry above.
 
 ## Pocket386 BIOS / CMOS warning
 
@@ -246,17 +236,13 @@ Two defaults are especially relevant to this project:
 - **mouse support may revert to Disabled**, which prevents the physical BIOS PS/2 mouse path from operating normally;
 - the **floppy/FDC configuration may revert to Enabled**, which can produce the familiar floppy-controller/FDC failure message or boot beeps on a machine without a usable floppy drive/controller configuration.
 
-Therefore, if the physical PS/2 mouse suddenly appears completely dead after the Pocket386 has been stored with a flat battery, **check the BIOS before debugging the driver**. On commonly reported Pocket386 firmware, hold **Delete while powering on** to enter BIOS setup, then verify mouse support and the floppy/FDC settings.
-
 This also explains apparently spontaneous BIOS resets reported by Pocket386 users: the machine is using its main battery for retention instead of a separate coin-cell-style CMOS battery.
 
 ### Saving/restoring BIOS settings with DOS utilities
 
 Generic DOS utilities exist that can save CMOS/BIOS configuration data and restore it later. One possible workaround is to keep a known-good CMOS backup and invoke the corresponding restore utility from `AUTOEXEC.BAT`, before starting Windows with `WIN`.
 
-This can be useful on a Pocket386 whose main battery has discharged and caused the firmware settings to reset. However, **CH375USB does not bundle, recommend, test, document commands for, or provide support for any CMOS backup/restore utility**. Formats and behavior are utility- and BIOS-specific, and writing incorrect CMOS data can create additional boot/configuration problems. Use such tools only if you already understand the specific utility and firmware involved.
-
-In a Windows boot profile, the logical placement would be before `WIN`; the dual-boot example below leaves an explicit comment showing where such an optional external restore step could be placed without prescribing a particular program.
+**CH375USB does not bundle, recommend, test, document commands for, or provide support for any CMOS backup/restore utility**. Use such tools only if you already understand the specific utility and firmware involved.
 
 ### Community-modified BIOS
 
@@ -273,7 +259,7 @@ A closely related Pocket386 discussion on VOGONS describes the same type of modi
 
 https://www.vogons.org/viewtopic.php?start=100&t=99751
 
-**CH375USB has not tested or validated this modified BIOS.** It is not part of this project, and this project currently has **no verified instructions for flashing the Pocket386 BIOS**. The community report itself notes uncertainty about normal flashing tools and describes programming the firmware chip directly. Firmware flashing can render the machine unbootable; use any third-party BIOS image entirely at your own risk.
+**CH375USB has not tested or validated this modified BIOS.** The community report itself notes uncertainty about normal flashing tools and describes programming the firmware chip directly. Firmware flashing can render the machine unbootable; use any third-party BIOS image entirely at your own risk.
 
 ## Files
 
@@ -392,11 +378,8 @@ With this setup:
 - the **DOS** profile provides USB storage, keyboard, mouse and DOS hotplug;
 - the **Windows 95** profile loads CH375USB only immediately before Windows starts;
 - a USB storage device already detected by DOS can remain available in Windows 95;
-- `CH375MOU.DRV` consumes CH375USB's own `INT 33h` callback stream;
 - the physical PS/2 and CH375 USB mouse can coexist on the same Windows pointer;
-- USB keyboard input remains DOS-only;
-- Windows storage remains a DOS compatibility path, **not** a native Windows USB stack or safe-removal implementation.
-
+- Windows storage remains a DOS compatibility path.
 ## Windows 95 mouse companion
 
 Use the prebuilt [`binary/CH375MOU.DRV`](binary/CH375MOU.DRV), or build `CH375MOU.DRV` locally with `build.sh` or `BUILD.BAT`.
@@ -429,7 +412,7 @@ On the tested Pocket386 baseline:
 
 - a USB mouse already connected before Windows starts works;
 - a USB mouse can be hotplugged for the first time after Windows has started;
-- physical PS/2 and USB mice can work simultaneously;
+- PS/2 and USB mice can work simultaneously;
 - unplugging the USB mouse and then plugging it back in again during the **same** Windows 95 session does not currently restore USB input. The physical PS/2 mouse continues to work. This is a known minor issue retained for later work.
 
 ## MTEST mouse diagnostic
