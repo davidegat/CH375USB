@@ -41,7 +41,7 @@ CH375USB is an independent, unofficial project. It is not affiliated with or end
 
 | Device | DOS support | DOS hotplug | Windows 95 support | Windows 95 hotplug |
 |---|---|---|---|---|
-| Physical PS/2 mouse | Yes, through CH375USB internal `INT 33h` | DO NOT Hotplug a PS/2 mouse on old/cheap hardware! | Yes through `CH375MOU.DRV` | N/A |
+| Physical PS/2 mouse | Yes, through CH375USB internal `INT 33h` | Do not hot-plug PS/2 mice on legacy hardware unless the system explicitly supports it. | Yes through `CH375MOU.DRV` | N/A |
 | USB mouse | Yes | Yes | Yes through `CH375MOU.DRV` on the tested Pocket386 setup | First hotplug works; unplug then replug in the same Windows session is a known limitation |
 | USB flash drive / mass storage | Yes | Yes, when idle/closed | Yes through the DOS-backed compatibility path when detected before Windows starts | No native safe removal; do not unplug while Windows is running |
 | USB keyboard | Yes | Yes | No native Windows keyboard driver | No |
