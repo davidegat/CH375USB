@@ -6,6 +6,15 @@ All notable CH375USB changes are recorded here.
 
 0.5.1 makes CH375USB self-contained for mouse input and removes CuteMouse/CTMOUSE as a runtime dependency.
 
+### Storage write corruption fix - 2026-08-23
+
+- Fixed destructive DOS storage-write corruption caused by loading resident `xfer_off` after `DS` had already been switched to the caller transfer-buffer segment.
+- Applied the far-pointer fix to both the CH375 native `DISK_WRITE` path and the generic BOT/SCSI outbound path, including their write-verification comparison code.
+- Hardened 0.5.1 writes so each completed 512-byte sector is immediately read back and compared before DOS receives success. This intentionally favors filesystem safety over write speed.
+- Real-hardware validation on Pocket386 confirmed that the patched driver copies files correctly; the older FreddyV/WCH-derived `CH375286.SYS` was also verified as a known-working storage control on the same setup.
+- The earlier FAT16 corruption observation must not be attributed to filesystem geometry alone. The 1 GiB FAT16 layout remains the conservative interoperability baseline, while the reproduced destructive write failure was a CH375USB write-path bug.
+- Full diagnosis, corrected pointer sequence, formatting note and regression rules are recorded in [`documentation/STORAGE_WRITE_FIX_0.5.1.md`](documentation/STORAGE_WRITE_FIX_0.5.1.md).
+
 ### Added
 
 - Resident DOS `INT 33h` mouse provider in `internal_mouse.inc`.
