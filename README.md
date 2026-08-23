@@ -1,6 +1,6 @@
 # CH375USB 0.5.1
 
-**CH375USB 0.5.1** is an open-source USB host driver stack for 386-class DOS / Windows 95 systems using an ISA-connected CH375 controller at the common parallel-I/O mapping `0260h` / `0261h`.
+**CH375USB 0.5.1** is an open-source USB host driver stack with mass storage, keyboard, mouse support for 386-class DOS / Windows 95 systems using an ISA-connected CH375 controller at the common parallel-I/O mapping `0260h` / `0261h`.
 
 Version 0.5.1 keeps the established DOS mass-storage, HID keyboard, hotplug and Windows-aware paths, and makes the mouse stack self-contained: `CH375USB.SYS` now owns the DOS `INT 33h` mouse API directly, merges the physical BIOS PS/2 mouse with CH375 USB HID mouse input, provides the text-mode cursor requested by DOS applications, and feeds the independently written Win16 companion `CH375MOU.DRV` under Windows 95.
 
